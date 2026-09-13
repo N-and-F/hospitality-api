@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guesthouse Counter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app.css?v=field-icons">
+</head>
+<body>
+  <div id="login-view">
+    <div class="login-screen">
+      <div class="login-card">
+        <p class="eyebrow">N&amp;F</p>
+        <h1>Guesthouse</h1>
+        <p class="muted">Sign in to the counter</p>
+        <form id="login-form">
+          <label>Username
+            <span class="field-with-actions">
+              <input id="username" name="username" autocomplete="username" required>
+              <button type="button" class="field-icon" data-clear aria-label="Clear username">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </span>
+          </label>
+          <label>Password
+            <span class="field-with-actions">
+              <input id="password" name="password" type="password" autocomplete="current-password" required>
+              <button type="button" class="field-icon" data-clear aria-label="Clear password">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="field-icon" data-password-toggle aria-label="Show password">
+                <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.6-6.5 9.5-6.5S21.5 12 21.5 12 17.9 18.5 12 18.5 2.5 12 2.5 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+                <svg class="eye-shut" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M3 4.5 20.5 22M10.2 10.4A2.6 2.6 0 0 0 13.6 13.8M7.2 7.6C5 9 3.5 12 3.5 12s3.6 6.5 9.5 6.5c1.6 0 3-.3 4.2-.8M16.7 16.1C19 14.7 20.5 12 20.5 12S16.9 5.5 11 5.5c-.7 0-1.3.1-1.9.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+              </button>
+            </span>
+          </label>
+          <button type="submit">Sign in</button>
+          <p id="login-error" class="error" hidden></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-view" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark">N&amp;F</span>
+        <strong>Guesthouse Counter</strong>
+      </div>
+      <nav>
+        <button type="button" class="nav-btn active" data-nav="txn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          New transaction
+        </button>
+        <button type="button" class="nav-btn" data-nav="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Transaction history
+        </button>
+        <button type="button" class="nav-btn" data-nav="settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6.2 6.2l1.6 1.6M16.2 16.2l1.6 1.6M6.2 17.8l1.6-1.6M16.2 7.8l1.6-1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Settings
+        </button>
+      </nav>
+      <div class="sidebar-user">
+        <p id="who"></p>
+        <button type="button" id="logout" class="text-link">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="page">
+        <section class="wallets" id="wallets"></section>
+
+        <section data-panel="txn">
+          <h2 id="txn-heading">New transaction</h2>
+          <form id="txn-form" class="card">
+            <label>Date <input id="txn-date" type="date" required></label>
+            <label>Method
+              <select id="method" required></select>
+            </label>
+            <label>Amount (₱) <input id="amount" type="number" step="0.01" min="0.01" required></label>
+            <label>Profit (₱) <input id="profit" type="number" step="0.01" min="0"></label>
+            <label class="check"><input id="profit-gcash" type="checkbox"> Profit in GCash</label>
+            <label>Note <input id="note" maxlength="200"></label>
+            <button type="submit" id="txn-save">Save</button>
+            <button type="button" id="txn-cancel" class="ghost" hidden>Cancel edit</button>
+            <p id="txn-error" class="error" hidden></p>
+          </form>
+        </section>
+
+        <section class="history-panel" data-panel="history" hidden>
+          <h2>Transaction history</h2>
+          <div class="card history-card">
+            <div class="history-toolbar">
+              <div class="range-tabs" role="tablist">
+                <button type="button" class="range-tab active" data-range="day">Daily</button>
+                <button type="button" class="range-tab" data-range="week">Weekly</button>
+                <button type="button" class="range-tab" data-range="month">Monthly</button>
+              </div>
+              <label class="history-date">Date <input id="history-date" type="date"></label>
+            </div>
+            <div id="totals" class="history-summary"></div>
+            <div id="txns" class="history-list"></div>
+          </div>
+        </section>
+
+        <section data-panel="settings" hidden>
+          <div data-settings-menu>
+            <h2>Settings</h2>
+            <div class="menu-list">
+              <button type="button" class="menu-item" data-settings-page="profile">
+                <span>My account</span>
+                <small>Username and role</small>
+              </button>
+              <div id="admin-settings" hidden>
+                <button type="button" class="menu-item" data-settings-page="opening">
+                  <span>Wallet Balances</span>
+                  <small>Set cash, GCash, and TPC for the day</small>
+                </button>
+                <button type="button" class="menu-item" data-settings-page="account">
+                  <span>Add account</span>
+                  <small>Create Staff or Admin login</small>
+                </button>
+                <button type="button" class="menu-item" data-settings-page="users">
+                  <span>Accounts &amp; roles</span>
+                  <small>Promote or demote existing users</small>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div data-settings-screen="profile" hidden>
+            <button type="button" class="text-link back" data-settings-back>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Back to Settings
+            </button>
+            <h2>My account</h2>
+            <ul class="account-list card-list">
+              <li><span>Username</span><strong id="profile-username"></strong></li>
+              <li><span>Role</span><strong id="profile-role"></strong></li>
+            </ul>
+          </div>
+
+          <div data-settings-screen="opening" hidden>
+            <button type="button" class="text-link back" data-settings-back>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Back to Settings
+            </button>
+            <h2>Wallet Balances</h2>
+            <p class="muted">Edit the current Cash, GCash, and TPC wallets.</p>
+            <form id="opening-form">
+              <div class="wallets wallet-edit">
+                <label>Cash <input id="open-cash" type="number" step="0.01" required></label>
+                <label>GCash <input id="open-gcash" type="number" step="0.01" required></label>
+                <label>TPC <input id="open-tpc" type="number" step="0.01" required></label>
+              </div>
+              <button type="submit">Save wallets</button>
+              <p id="opening-error" class="error" hidden></p>
+            </form>
+          </div>
+
+          <div data-settings-screen="account" hidden>
+            <button type="button" class="text-link back" data-settings-back>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Back to Settings
+            </button>
+            <h2>Add account</h2>
+            <form id="account-form" class="card">
+              <label>Username
+                <span class="field-with-actions">
+                  <input id="account-username" required minlength="3" maxlength="32">
+                  <button type="button" class="field-icon" data-clear aria-label="Clear username">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </button>
+                </span>
+              </label>
+              <label>Password
+                <span class="field-with-actions">
+                  <input id="account-password" type="password" required>
+                  <button type="button" class="field-icon" data-clear aria-label="Clear password">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </button>
+                  <button type="button" class="field-icon" data-password-toggle aria-label="Show password">
+                    <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.6-6.5 9.5-6.5S21.5 12 21.5 12 17.9 18.5 12 18.5 2.5 12 2.5 12Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+                    <svg class="eye-shut" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M3 4.5 20.5 22M10.2 10.4A2.6 2.6 0 0 0 13.6 13.8M7.2 7.6C5 9 3.5 12 3.5 12s3.6 6.5 9.5 6.5c1.6 0 3-.3 4.2-.8M16.7 16.1C19 14.7 20.5 12 20.5 12S16.9 5.5 11 5.5c-.7 0-1.3.1-1.9.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                  </button>
+                </span>
+              </label>
+              <label>Role
+                <select id="account-role">
+                  <option value="Staff">Staff</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </label>
+              <button type="submit">Create account</button>
+              <p id="account-error" class="error" hidden></p>
+            </form>
+          </div>
+
+          <div data-settings-screen="users" hidden>
+            <button type="button" class="text-link back" data-settings-back>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Back to Settings
+            </button>
+            <div class="heading-row">
+              <h2>Accounts &amp; roles</h2>
+              <span class="current-user" id="accounts-current"></span>
+            </div>
+            <div class="card">
+              <p id="users-error" class="error" hidden></p>
+              <ul id="users" class="account-list"><li class="muted empty">No accounts yet.</li></ul>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="note-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-note-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="note-title">
+      <h3 id="note-title">Note</h3>
+      <p id="note-copy" class="note-body"></p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="note-close" data-note-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="delete-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-delete-cancel></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+      <h3 id="delete-title">Delete transaction</h3>
+      <p id="delete-copy" class="muted">This cannot be undone.</p>
+      <p id="delete-error" class="error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="delete-cancel">Cancel</button>
+        <button type="button" class="danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js?v=field-icons"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+using Hospitality.Api.Ledger;
+
+namespace Hospitality.Api.Tests;
+
+public sealed class WalletMathTests
+{
+    [Fact]
+    public void Cash_in_adds_cash_and_subtracts_gcash()
+    {
+        var deltas = WalletMath.Deltas(TransactionMethods.CashIn, 500, 10, profitInGcash: false);
+        Assert.Equal(510, deltas.CashOnHand);
+        Assert.Equal(-500, deltas.Gcash);
+        Assert.Equal(0, deltas.Tpc);
+    }
+
+    [Fact]
+    public void Cash_in_fee_in_gcash_credits_gcash()
+    {
+        var deltas = WalletMath.Deltas(TransactionMethods.CashIn, 500, 10, profitInGcash: true);
+        Assert.Equal(500, deltas.CashOnHand);
+        Assert.Equal(-490, deltas.Gcash);
+    }
+
+    [Fact]
+    public void Top_up_forces_zero_profit()
+    {
+        var deltas = WalletMath.Deltas(TransactionMethods.TopUpGcash, 1000, 99, profitInGcash: false);
+        Assert.Equal(-1000, deltas.CashOnHand);
+        Assert.Equal(1000, deltas.Gcash);
+    }
+}
