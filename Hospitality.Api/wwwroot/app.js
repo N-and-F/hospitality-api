@@ -7,6 +7,7 @@ const appView = document.getElementById("app-view");
 const feloganView = document.getElementById("felogan-view");
 const loginForm = document.getElementById("login-form");
 const loginError = document.getElementById("login-error");
+const chooserError = document.getElementById("chooser-error");
 const txnForm = document.getElementById("txn-form");
 const txnError = document.getElementById("txn-error");
 const methodSelect = document.getElementById("method");
@@ -445,12 +446,22 @@ document.getElementById("felogan-logout").addEventListener("click", signOut);
 document.getElementById("switch-app").addEventListener("click", switchApp);
 document.getElementById("felogan-switch-app").addEventListener("click", switchApp);
 document.getElementById("choose-counter").addEventListener("click", async () => {
-  sessionStorage.setItem(appKey, "counter");
-  await loadApp();
+  showError(chooserError, "");
+  try {
+    await loadApp();
+    sessionStorage.setItem(appKey, "counter");
+  } catch (error) {
+    showError(chooserError, error.message);
+  }
 });
 document.getElementById("choose-felogan").addEventListener("click", async () => {
-  sessionStorage.setItem(appKey, "felogan");
-  await window.openFeloganApp();
+  showError(chooserError, "");
+  try {
+    await window.openFeloganApp();
+    sessionStorage.setItem(appKey, "felogan");
+  } catch (error) {
+    showError(chooserError, error.message);
+  }
 });
 
 document.querySelectorAll("[data-nav]").forEach((button) => {

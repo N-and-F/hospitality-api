@@ -27,13 +27,22 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     {
         using var client = factory.CreateClient();
 
+        var html = await client.GetStringAsync("/");
         var app = await client.GetStringAsync("/app.js");
         var feloganResponse = await client.GetAsync("/felogan.js");
 
         Assert.Equal(HttpStatusCode.OK, feloganResponse.StatusCode);
         var felogan = await feloganResponse.Content.ReadAsStringAsync();
+        Assert.Contains("id=\"chooser-error\"", html);
         Assert.Contains("hospitality.app", app);
         Assert.Contains("openFeloganApp", app);
+        Assert.Contains("showError(chooserError, error.message)", app);
+        Assert.Contains(
+            "await loadApp();\n    sessionStorage.setItem(appKey, \"counter\");",
+            app);
+        Assert.Contains(
+            "await window.openFeloganApp();\n    sessionStorage.setItem(appKey, \"felogan\");",
+            app);
         Assert.Contains("window.bootHospitality", app);
         Assert.DoesNotContain("if (token())", app);
         Assert.Contains("window.openFeloganApp", felogan);

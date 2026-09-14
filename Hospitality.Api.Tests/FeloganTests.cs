@@ -367,13 +367,14 @@ public sealed class FeloganTests
         Assert.Equal(240.00m, row.RootElement.GetProperty("lines")[0].GetProperty("sellTotal").GetDecimal());
         Assert.Equal(55.17m, row.RootElement.GetProperty("lines")[0].GetProperty("cost").GetDecimal());
 
-        await client.PutAsJsonAsync($"/v1/felogan/menu-items/{tocilogId}", new
+        var menuItemUpdate = await client.PutAsJsonAsync($"/v1/felogan/menu-items/{tocilogId}", new
         {
             name = "Tocilog",
             kind = "plate",
             sellPrice = 200m,
             cost = 55.17m
         });
+        menuItemUpdate.EnsureSuccessStatusCode();
 
         var list = await client.GetFromJsonAsync<JsonElement>(
             "/v1/felogan/servings?date=2026-09-06&range=day");
