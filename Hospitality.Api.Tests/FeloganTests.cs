@@ -416,6 +416,183 @@ public sealed class FeloganTests
         Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(zero));
     }
 
+    [Fact]
+    public async Task Duplicate_client_request_id_replays_for_same_admin()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var requestId = Guid.NewGuid();
+        var body = new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+            clientRequestId = requestId
+        };
+
+        var first = await client.PostAsJsonAsync("/v1/felogan/servings", body);
+        var replay = await client.PostAsJsonAsync("/v1/felogan/servings", body);
+        first.EnsureSuccessStatusCode();
+        replay.EnsureSuccessStatusCode();
+        using var firstDoc = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var replayDoc = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        Assert.Equal(
+            firstDoc.RootElement.GetProperty("id").GetGuid(),
+            replayDoc.RootElement.GetProperty("id").GetGuid());
+
+        var createdUser = await client.PostAsJsonAsync("/v1/staff", new
+        {
+            email = "feloadmin2@example.com",
+            username = "feloadmin2",
+            password = "AdminPass1!",
+            role = "Admin"
+        });
+        createdUser.EnsureSuccessStatusCode();
+
+        var otherAdmin = factory.CreateClient();
+        var login = await otherAdmin.PostAsJsonAsync("/v1/auth/login", new
+        {
+            username = "feloadmin2",
+            password = "AdminPass1!"
+        });
+        login.EnsureSuccessStatusCode();
+        using var tokenDoc = JsonDocument.Parse(await login.Content.ReadAsStringAsync());
+        otherAdmin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            tokenDoc.RootElement.GetProperty("access_token").GetString());
+
+        var conflict = await otherAdmin.PostAsJsonAsync("/v1/felogan/servings", body);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal("CLIENT_REQUEST_CONFLICT", await ReadErrorCode(conflict));
+    }
+
+    [Fact]
+    public async Task Update_qty_keeps_snapshot_price_and_delete_removes_row()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = row.RootElement.GetProperty("id").GetGuid();
+
+        var menuItemUpdate = await client.PutAsJsonAsync($"/v1/felogan/menu-items/{tocilogId}", new
+        {
+            name = "Tocilog",
+            kind = "plate",
+            sellPrice = 200m,
+            cost = 55.17m
+        });
+        menuItemUpdate.EnsureSuccessStatusCode();
+
+        var updated = await client.PutAsJsonAsync($"/v1/felogan/servings/{id}", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 3 } }
+        });
+        updated.EnsureSuccessStatusCode();
+        using var updatedDoc = JsonDocument.Parse(await updated.Content.ReadAsStringAsync());
+        Assert.Equal(3, updatedDoc.RootElement.GetProperty("totals").GetProperty("qty").GetInt32());
+        Assert.Equal(360.00m, updatedDoc.RootElement.GetProperty("totals").GetProperty("sell").GetDecimal());
+
+        var deleted = await client.DeleteAsync($"/v1/felogan/servings/{id}");
+        deleted.EnsureSuccessStatusCode();
+        using var deletedDoc = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync());
+        Assert.Equal(id, deletedDoc.RootElement.GetProperty("id").GetGuid());
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/servings?date=2026-09-06");
+        Assert.Equal(0, list.GetProperty("items").GetArrayLength());
+
+        var missing = await client.DeleteAsync($"/v1/felogan/servings/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("SERVING_NOT_FOUND", await ReadErrorCode(missing));
+    }
+
+    [Fact]
+    public async Task Serving_week_range_is_manila_monday_sunday()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+
+        async Task Post(string day) =>
+            (await client.PostAsJsonAsync("/v1/felogan/servings", new
+            {
+                servedOn = day,
+                roomId,
+                cookId,
+                lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+                clientRequestId = Guid.NewGuid()
+            })).EnsureSuccessStatusCode();
+
+        await Post("2026-09-14");
+        await Post("2026-09-20");
+        await Post("2026-09-21");
+
+        var week = await client.GetFromJsonAsync<JsonElement>(
+            "/v1/felogan/servings?date=2026-09-16&range=week");
+        Assert.Equal(2, week.GetProperty("items").GetArrayLength());
+        Assert.Equal("week", week.GetProperty("range").GetString());
+    }
+
+    [Fact]
+    public async Task Archived_room_cannot_be_used_on_create_but_existing_serving_can_keep_it()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var servingId = row.RootElement.GetProperty("id").GetGuid();
+
+        var archived = await client.PostAsync($"/v1/felogan/rooms/{roomId}/archive", null);
+        archived.EnsureSuccessStatusCode();
+
+        var blocked = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-07",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        Assert.Equal(HttpStatusCode.NotFound, blocked.StatusCode);
+        Assert.Equal("ROOM_NOT_FOUND", await ReadErrorCode(blocked));
+
+        var keep = await client.PutAsJsonAsync($"/v1/felogan/servings/{servingId}", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } }
+        });
+        keep.EnsureSuccessStatusCode();
+    }
+
     private static async Task<(Guid RoomId, Guid CookId, Guid TocilogId)> ServingIdsAsync(
         HttpClient client)
     {

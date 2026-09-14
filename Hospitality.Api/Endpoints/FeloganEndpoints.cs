@@ -227,6 +227,33 @@ public static class FeloganEndpoints
         })
             .WithName("CreateFeloganServing");
 
+        felogan.MapPut("/servings/{id:guid}", async (
+            Guid id,
+            UpdateServingRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UpdateServingAsync(id, request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UpdateFeloganServing");
+
+        felogan.MapDelete("/servings/{id:guid}", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.DeleteServingAsync(id, cancellationToken);
+            return result.Id is not null
+                ? Results.Ok(new { id = result.Id.Value })
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("DeleteFeloganServing");
+
         return group;
     }
 

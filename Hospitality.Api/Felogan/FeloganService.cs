@@ -582,6 +582,153 @@ public sealed class FeloganService(AppDbContext db)
         return (200, null, null, ToDto(serving));
     }
 
+    public async Task<(int Status, string? Code, string? Message, ServingDto? Value)> UpdateServingAsync(
+        Guid id,
+        UpdateServingRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var serving = await db.FeloganServings
+            .Include(candidate => candidate.Room)
+            .Include(candidate => candidate.Cook)
+            .Include(candidate => candidate.Lines)
+            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        if (serving is null)
+        {
+            return (404, "SERVING_NOT_FOUND", "Serving not found.", null);
+        }
+
+        if (request.Note is { Length: > 200 })
+        {
+            return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
+        }
+
+        var requestedLines = request.Lines?.Where(line => line.Qty != 0).ToArray() ?? [];
+        if (requestedLines.Length == 0)
+        {
+            return (400, "VALIDATION_ERROR", "At least one serving line with a non-zero quantity is required.", null);
+        }
+
+        if (requestedLines.Any(line => line.Qty < 0))
+        {
+            return (400, "VALIDATION_ERROR", "Line quantities cannot be negative.", null);
+        }
+
+        var room = await db.FeloganRooms.FirstOrDefaultAsync(
+            candidate => candidate.Id == request.RoomId
+                && (candidate.ArchivedAt == null || candidate.Id == serving.RoomId),
+            cancellationToken);
+        if (room is null)
+        {
+            return (404, "ROOM_NOT_FOUND", "Room not found.", null);
+        }
+
+        var cook = await db.FeloganCooks.FirstOrDefaultAsync(
+            candidate => candidate.Id == request.CookId
+                && (candidate.ArchivedAt == null || candidate.Id == serving.CookId),
+            cancellationToken);
+        if (cook is null)
+        {
+            return (404, "COOK_NOT_FOUND", "Cook not found.", null);
+        }
+
+        var existingLines = serving.Lines.ToArray();
+        var snapshots = existingLines
+            .GroupBy(line => line.MenuItemId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var newMenuItemIds = requestedLines
+            .Select(line => line.MenuItemId)
+            .Where(menuItemId => !snapshots.ContainsKey(menuItemId))
+            .Distinct()
+            .ToArray();
+        var newMenuItems = await db.FeloganMenuItems
+            .AsNoTracking()
+            .Where(item => newMenuItemIds.Contains(item.Id) && item.ArchivedAt == null)
+            .ToDictionaryAsync(item => item.Id, cancellationToken);
+        if (newMenuItems.Count != newMenuItemIds.Length)
+        {
+            return (404, "MENU_ITEM_NOT_FOUND", "Menu item not found.", null);
+        }
+
+        serving.ServedOn = request.ServedOn == default ? ManilaToday() : request.ServedOn;
+        serving.RoomId = room.Id;
+        serving.CookId = cook.Id;
+        serving.Room = room;
+        serving.Cook = cook;
+        serving.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+
+        var availableExistingLines = existingLines
+            .GroupBy(line => line.MenuItemId)
+            .ToDictionary(group => group.Key, group => new Queue<FeloganServingLine>(group));
+        var retainedLineIds = new HashSet<Guid>();
+        foreach (var line in requestedLines)
+        {
+            if (availableExistingLines.TryGetValue(line.MenuItemId, out var matchingLines)
+                && matchingLines.TryDequeue(out var existingLine))
+            {
+                existingLine.Qty = line.Qty;
+                retainedLineIds.Add(existingLine.Id);
+                continue;
+            }
+
+            FeloganServingLine newLine;
+            if (snapshots.TryGetValue(line.MenuItemId, out var snapshot))
+            {
+                newLine = new FeloganServingLine
+                {
+                    Id = Guid.NewGuid(),
+                    MenuItemId = snapshot.MenuItemId,
+                    SnapshotName = snapshot.SnapshotName,
+                    SnapshotKind = snapshot.SnapshotKind,
+                    SnapshotSellPrice = snapshot.SnapshotSellPrice,
+                    SnapshotCost = snapshot.SnapshotCost,
+                    Qty = line.Qty
+                };
+            }
+            else
+            {
+                var item = newMenuItems[line.MenuItemId];
+                newLine = new FeloganServingLine
+                {
+                    Id = Guid.NewGuid(),
+                    MenuItemId = item.Id,
+                    SnapshotName = item.Name,
+                    SnapshotKind = item.Kind,
+                    SnapshotSellPrice = item.SellPrice,
+                    SnapshotCost = item.Cost,
+                    Qty = line.Qty
+                };
+            }
+
+            serving.Lines.Add(newLine);
+        }
+
+        foreach (var removedLine in existingLines.Where(line => !retainedLineIds.Contains(line.Id)))
+        {
+            serving.Lines.Remove(removedLine);
+            db.FeloganServingLines.Remove(removedLine);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return (200, null, null, ToDto(serving));
+    }
+
+    public async Task<(int Status, string? Code, string? Message, Guid? Id)> DeleteServingAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var serving = await db.FeloganServings.SingleOrDefaultAsync(
+            candidate => candidate.Id == id,
+            cancellationToken);
+        if (serving is null)
+        {
+            return (404, "SERVING_NOT_FOUND", "Serving not found.", null);
+        }
+
+        db.FeloganServings.Remove(serving);
+        await db.SaveChangesAsync(cancellationToken);
+        return (200, null, null, serving.Id);
+    }
+
     public async Task<(int Status, string? Code, string? Message, ServingListDto? Value)> ListServingsAsync(
         string? date,
         string? range,
