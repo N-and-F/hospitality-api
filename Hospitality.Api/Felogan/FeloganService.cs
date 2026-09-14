@@ -34,13 +34,15 @@ public sealed class FeloganService(AppDbContext db)
             return (validation.Status, validation.Code, validation.Message, null);
         }
 
-        var normalizedName = name.ToLower();
-        var duplicate = await db.FeloganRooms.AnyAsync(
-            room => room.ArchivedAt == null && room.Name.ToLower() == normalizedName,
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.Room,
+            name,
+            currentId: null,
+            "room",
             cancellationToken);
-        if (duplicate)
+        if (uniqueness is not null)
         {
-            return (409, "NAME_TAKEN", "An active room with that name already exists.", null);
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         var maxSortOrder = await db.FeloganRooms
@@ -77,18 +79,16 @@ public sealed class FeloganService(AppDbContext db)
             return (validation.Status, validation.Code, validation.Message, null);
         }
 
-        if (room.ArchivedAt is null)
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.Room,
+            name,
+            room.Id,
+            "room",
+            cancellationToken,
+            room.ArchivedAt is null);
+        if (uniqueness is not null)
         {
-            var normalizedName = name.ToLower();
-            var duplicate = await db.FeloganRooms.AnyAsync(
-                candidate => candidate.Id != id
-                    && candidate.ArchivedAt == null
-                    && candidate.Name.ToLower() == normalizedName,
-                cancellationToken);
-            if (duplicate)
-            {
-                return (409, "NAME_TAKEN", "An active room with that name already exists.", null);
-            }
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         room.Name = name;
@@ -137,15 +137,15 @@ public sealed class FeloganService(AppDbContext db)
             return (invalidState.Status, invalidState.Code, invalidState.Message, null);
         }
 
-        var normalizedName = room.Name.ToLower();
-        var duplicate = await db.FeloganRooms.AnyAsync(
-            candidate => candidate.Id != id
-                && candidate.ArchivedAt == null
-                && candidate.Name.ToLower() == normalizedName,
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.Room,
+            room.Name,
+            room.Id,
+            "room",
             cancellationToken);
-        if (duplicate)
+        if (uniqueness is not null)
         {
-            return (409, "NAME_TAKEN", "An active room with that name already exists.", null);
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         room.ArchivedAt = null;
@@ -182,13 +182,15 @@ public sealed class FeloganService(AppDbContext db)
             return (validation.Status, validation.Code, validation.Message, null);
         }
 
-        var normalizedName = name.ToLower();
-        var duplicate = await db.FeloganCooks.AnyAsync(
-            cook => cook.ArchivedAt == null && cook.Name.ToLower() == normalizedName,
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.Cook,
+            name,
+            currentId: null,
+            "cook",
             cancellationToken);
-        if (duplicate)
+        if (uniqueness is not null)
         {
-            return (409, "NAME_TAKEN", "An active cook with that name already exists.", null);
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         var maxSortOrder = await db.FeloganCooks
@@ -225,18 +227,16 @@ public sealed class FeloganService(AppDbContext db)
             return (validation.Status, validation.Code, validation.Message, null);
         }
 
-        if (cook.ArchivedAt is null)
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.Cook,
+            name,
+            cook.Id,
+            "cook",
+            cancellationToken,
+            cook.ArchivedAt is null);
+        if (uniqueness is not null)
         {
-            var normalizedName = name.ToLower();
-            var duplicate = await db.FeloganCooks.AnyAsync(
-                candidate => candidate.Id != id
-                    && candidate.ArchivedAt == null
-                    && candidate.Name.ToLower() == normalizedName,
-                cancellationToken);
-            if (duplicate)
-            {
-                return (409, "NAME_TAKEN", "An active cook with that name already exists.", null);
-            }
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         cook.Name = name;
@@ -285,15 +285,15 @@ public sealed class FeloganService(AppDbContext db)
             return (invalidState.Status, invalidState.Code, invalidState.Message, null);
         }
 
-        var normalizedName = cook.Name.ToLower();
-        var duplicate = await db.FeloganCooks.AnyAsync(
-            candidate => candidate.Id != id
-                && candidate.ArchivedAt == null
-                && candidate.Name.ToLower() == normalizedName,
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.Cook,
+            cook.Name,
+            cook.Id,
+            "cook",
             cancellationToken);
-        if (duplicate)
+        if (uniqueness is not null)
         {
-            return (409, "NAME_TAKEN", "An active cook with that name already exists.", null);
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         cook.ArchivedAt = null;
@@ -336,13 +336,15 @@ public sealed class FeloganService(AppDbContext db)
             return (validation.Status, validation.Code, validation.Message, null);
         }
 
-        var normalizedName = name.ToLower();
-        var duplicate = await db.FeloganMenuItems.AnyAsync(
-            item => item.ArchivedAt == null && item.Name.ToLower() == normalizedName,
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.MenuItem,
+            name,
+            currentId: null,
+            "menu item",
             cancellationToken);
-        if (duplicate)
+        if (uniqueness is not null)
         {
-            return (409, "NAME_TAKEN", "An active menu item with that name already exists.", null);
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         var maxSortOrder = await db.FeloganMenuItems
@@ -382,18 +384,16 @@ public sealed class FeloganService(AppDbContext db)
             return (validation.Status, validation.Code, validation.Message, null);
         }
 
-        if (item.ArchivedAt is null)
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.MenuItem,
+            name,
+            item.Id,
+            "menu item",
+            cancellationToken,
+            item.ArchivedAt is null);
+        if (uniqueness is not null)
         {
-            var normalizedName = name.ToLower();
-            var duplicate = await db.FeloganMenuItems.AnyAsync(
-                candidate => candidate.Id != id
-                    && candidate.ArchivedAt == null
-                    && candidate.Name.ToLower() == normalizedName,
-                cancellationToken);
-            if (duplicate)
-            {
-                return (409, "NAME_TAKEN", "An active menu item with that name already exists.", null);
-            }
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         item.Name = name;
@@ -445,15 +445,15 @@ public sealed class FeloganService(AppDbContext db)
             return (invalidState.Status, invalidState.Code, invalidState.Message, null);
         }
 
-        var normalizedName = item.Name.ToLower();
-        var duplicate = await db.FeloganMenuItems.AnyAsync(
-            candidate => candidate.Id != id
-                && candidate.ArchivedAt == null
-                && candidate.Name.ToLower() == normalizedName,
+        var uniqueness = await ValidateUniqueActiveNameAsync(
+            CatalogKind.MenuItem,
+            item.Name,
+            item.Id,
+            "menu item",
             cancellationToken);
-        if (duplicate)
+        if (uniqueness is not null)
         {
-            return (409, "NAME_TAKEN", "An active menu item with that name already exists.", null);
+            return (uniqueness.Status, uniqueness.Code, uniqueness.Message, null);
         }
 
         item.ArchivedAt = null;
@@ -466,6 +466,48 @@ public sealed class FeloganService(AppDbContext db)
         name = requestedName?.Trim() ?? "";
         return name.Length is 0 or > 64
             ? new CatalogFailure(400, "VALIDATION_ERROR", "Name must be between 1 and 64 characters.")
+            : null;
+    }
+
+    private async Task<CatalogFailure?> ValidateUniqueActiveNameAsync(
+        CatalogKind catalog,
+        string name,
+        Guid? currentId,
+        string itemName,
+        CancellationToken cancellationToken,
+        bool shouldValidate = true)
+    {
+        if (!shouldValidate)
+        {
+            return null;
+        }
+
+        var normalizedName = name.ToLower();
+        var duplicate = catalog switch
+        {
+            CatalogKind.Room => await db.FeloganRooms.AnyAsync(
+                item => item.Id != currentId
+                    && item.ArchivedAt == null
+                    && item.Name.ToLower() == normalizedName,
+                cancellationToken),
+            CatalogKind.Cook => await db.FeloganCooks.AnyAsync(
+                item => item.Id != currentId
+                    && item.ArchivedAt == null
+                    && item.Name.ToLower() == normalizedName,
+                cancellationToken),
+            CatalogKind.MenuItem => await db.FeloganMenuItems.AnyAsync(
+                item => item.Id != currentId
+                    && item.ArchivedAt == null
+                    && item.Name.ToLower() == normalizedName,
+                cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(catalog))
+        };
+
+        return duplicate
+            ? new CatalogFailure(
+                409,
+                "NAME_TAKEN",
+                $"An active {itemName} with that name already exists.")
             : null;
     }
 
@@ -518,6 +560,13 @@ public sealed class FeloganService(AppDbContext db)
 
     private static MenuItemDto ToDto(FeloganMenuItem item) =>
         new(item.Id, item.Name, item.Kind, item.SellPrice, item.Cost, item.ArchivedAt);
+
+    private enum CatalogKind
+    {
+        Room,
+        Cook,
+        MenuItem
+    }
 
     private sealed record CatalogFailure(int Status, string Code, string Message);
 }
