@@ -417,6 +417,53 @@ public sealed class FeloganTests
     }
 
     [Fact]
+    public async Task Create_serving_rejects_duplicate_menu_item_ids()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+
+        var response = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[]
+            {
+                new { menuItemId = tocilogId, qty = 1 },
+                new { menuItemId = tocilogId, qty = 2 }
+            },
+            clientRequestId = Guid.NewGuid()
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(response));
+    }
+
+    [Fact]
+    public async Task Create_serving_stores_explicit_minimum_date()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+
+        var response = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "0001-01-01",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+            clientRequestId = Guid.NewGuid()
+        });
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("0001-01-01", document.RootElement.GetProperty("servedOn").GetString());
+    }
+
+    [Fact]
     public async Task Duplicate_client_request_id_replays_for_same_admin()
     {
         await using var factory = new ApiFactory();

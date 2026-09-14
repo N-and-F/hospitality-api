@@ -35,7 +35,7 @@ public sealed class ServingLineRequest
 
 public sealed class CreateServingRequest
 {
-    public DateOnly ServedOn { get; set; }
+    public DateOnly? ServedOn { get; set; }
     public Guid RoomId { get; set; }
     public Guid CookId { get; set; }
     public string? Note { get; set; }
@@ -45,7 +45,7 @@ public sealed class CreateServingRequest
 
 public sealed class UpdateServingRequest
 {
-    public DateOnly ServedOn { get; set; }
+    public DateOnly? ServedOn { get; set; }
     public Guid RoomId { get; set; }
     public Guid CookId { get; set; }
     public string? Note { get; set; }

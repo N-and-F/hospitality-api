@@ -502,6 +502,11 @@ public sealed class FeloganService(AppDbContext db)
             return (400, "VALIDATION_ERROR", "Line quantities cannot be negative.", null);
         }
 
+        if (requestedLines.Select(line => line.MenuItemId).Distinct().Count() != requestedLines.Length)
+        {
+            return (400, "VALIDATION_ERROR", "Menu item IDs must be unique.", null);
+        }
+
         var room = await db.FeloganRooms.FirstOrDefaultAsync(
             candidate => candidate.Id == request.RoomId && candidate.ArchivedAt == null,
             cancellationToken);
@@ -531,7 +536,7 @@ public sealed class FeloganService(AppDbContext db)
         var serving = new FeloganServing
         {
             Id = Guid.NewGuid(),
-            ServedOn = request.ServedOn == default ? ManilaToday() : request.ServedOn,
+            ServedOn = request.ServedOn is null ? ManilaToday() : request.ServedOn.Value,
             RoomId = room.Id,
             CookId = cook.Id,
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
@@ -654,7 +659,7 @@ public sealed class FeloganService(AppDbContext db)
             return (404, "MENU_ITEM_NOT_FOUND", "Menu item not found.", null);
         }
 
-        serving.ServedOn = request.ServedOn == default ? ManilaToday() : request.ServedOn;
+        serving.ServedOn = request.ServedOn is null ? ManilaToday() : request.ServedOn.Value;
         serving.RoomId = room.Id;
         serving.CookId = cook.Id;
         serving.Room = room;
@@ -675,34 +680,17 @@ public sealed class FeloganService(AppDbContext db)
                 continue;
             }
 
-            FeloganServingLine newLine;
-            if (snapshots.TryGetValue(line.MenuItemId, out var snapshot))
+            var item = newMenuItems[line.MenuItemId];
+            var newLine = new FeloganServingLine
             {
-                newLine = new FeloganServingLine
-                {
-                    Id = Guid.NewGuid(),
-                    MenuItemId = snapshot.MenuItemId,
-                    SnapshotName = snapshot.SnapshotName,
-                    SnapshotKind = snapshot.SnapshotKind,
-                    SnapshotSellPrice = snapshot.SnapshotSellPrice,
-                    SnapshotCost = snapshot.SnapshotCost,
-                    Qty = line.Qty
-                };
-            }
-            else
-            {
-                var item = newMenuItems[line.MenuItemId];
-                newLine = new FeloganServingLine
-                {
-                    Id = Guid.NewGuid(),
-                    MenuItemId = item.Id,
-                    SnapshotName = item.Name,
-                    SnapshotKind = item.Kind,
-                    SnapshotSellPrice = item.SellPrice,
-                    SnapshotCost = item.Cost,
-                    Qty = line.Qty
-                };
-            }
+                Id = Guid.NewGuid(),
+                MenuItemId = item.Id,
+                SnapshotName = item.Name,
+                SnapshotKind = item.Kind,
+                SnapshotSellPrice = item.SellPrice,
+                SnapshotCost = item.Cost,
+                Qty = line.Qty
+            };
 
             serving.Lines.Add(newLine);
         }
