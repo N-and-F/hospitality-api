@@ -613,6 +613,11 @@ public sealed class FeloganService(AppDbContext db)
             return (400, "VALIDATION_ERROR", "Line quantities cannot be negative.", null);
         }
 
+        if (requestedLines.Select(line => line.MenuItemId).Distinct().Count() != requestedLines.Length)
+        {
+            return (400, "VALIDATION_ERROR", "Menu item IDs must be unique.", null);
+        }
+
         var room = await db.FeloganRooms.FirstOrDefaultAsync(
             candidate => candidate.Id == request.RoomId
                 && (candidate.ArchivedAt == null || candidate.Id == serving.RoomId),
