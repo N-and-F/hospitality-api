@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Hospitality.Api.Data;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Hospitality.Api.Tests;
 
@@ -56,6 +58,77 @@ public sealed class FeloganTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(response));
+    }
+
+    [Fact]
+    public async Task Admin_can_archive_unarchive_and_rename_a_room()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        var room303 = list.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("name").GetString() == "303");
+        var id = room303.GetProperty("id").GetGuid();
+
+        var archived = await client.PostAsync($"/v1/felogan/rooms/{id}/archive", null);
+        archived.EnsureSuccessStatusCode();
+
+        var active = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        Assert.DoesNotContain(
+            active.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("name").GetString()),
+            n => n == "303");
+
+        var withArchived = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms?includeArchived=true");
+        Assert.Contains(
+            withArchived.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("name").GetString()),
+            n => n == "303");
+
+        var twice = await client.PostAsync($"/v1/felogan/rooms/{id}/archive", null);
+        Assert.Equal(HttpStatusCode.Conflict, twice.StatusCode);
+        Assert.Equal("ALREADY_ARCHIVED", await ReadErrorCode(twice));
+
+        var restored = await client.PostAsync($"/v1/felogan/rooms/{id}/unarchive", null);
+        restored.EnsureSuccessStatusCode();
+        var activeAgain = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        Assert.Contains(
+            activeAgain.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("name").GetString()),
+            n => n == "303");
+
+        var renamed = await client.PutAsJsonAsync($"/v1/felogan/rooms/{id}", new { name = "303-renamed" });
+        renamed.EnsureSuccessStatusCode();
+
+        using var scope = factory.Services
+            .GetRequiredService<IServiceScopeFactory>()
+            .CreateScope();
+        await global::Hospitality.Api.Felogan.FeloganSeed.EnsureAsync(
+            scope.ServiceProvider.GetRequiredService<AppDbContext>(),
+            CancellationToken.None);
+
+        var afterSeed = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        Assert.Contains("303-renamed", afterSeed.GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("name").GetString()));
+        Assert.DoesNotContain("303", afterSeed.GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("name").GetString()));
+    }
+
+    [Fact]
+    public async Task Room_lifecycle_returns_required_errors()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+
+        var missing = await client.PostAsync($"/v1/felogan/rooms/{Guid.NewGuid()}/archive", null);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("ROOM_NOT_FOUND", await ReadErrorCode(missing));
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        var activeId = list.GetProperty("items").EnumerateArray().First().GetProperty("id").GetGuid();
+        var alreadyActive = await client.PostAsync($"/v1/felogan/rooms/{activeId}/unarchive", null);
+        Assert.Equal(HttpStatusCode.Conflict, alreadyActive.StatusCode);
+        Assert.Equal("NOT_ARCHIVED", await ReadErrorCode(alreadyActive));
     }
 
     private static async Task AuthorizeAdminAsync(HttpClient client)

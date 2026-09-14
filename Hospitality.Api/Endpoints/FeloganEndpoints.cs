@@ -32,6 +32,46 @@ public static class FeloganEndpoints
         })
             .WithName("CreateFeloganRoom");
 
+        felogan.MapPut("/rooms/{id:guid}", async (
+            Guid id,
+            CatalogItemRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UpdateRoomAsync(id, request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UpdateFeloganRoom");
+
+        felogan.MapPost("/rooms/{id:guid}/archive", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.ArchiveRoomAsync(id, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("ArchiveFeloganRoom");
+
+        felogan.MapPost("/rooms/{id:guid}/unarchive", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UnarchiveRoomAsync(id, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UnarchiveFeloganRoom");
+
         return group;
     }
 }
