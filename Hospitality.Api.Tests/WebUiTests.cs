@@ -43,4 +43,22 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("<th>Note</th><th>Edit</th><th>Delete</th>", felogan);
         Assert.DoesNotContain("line.cost", felogan);
     }
+
+    [Fact]
+    public async Task Felogan_script_preserves_snapshots_and_guards_serving_mutations()
+    {
+        using var client = factory.CreateClient();
+
+        var felogan = await client.GetStringAsync("/felogan.js");
+
+        Assert.Contains("itemsById.set(item.id, item)", felogan);
+        Assert.Contains("if (submit.disabled)", felogan);
+        Assert.Contains("submit.disabled = true", felogan);
+        Assert.Contains("finally", felogan);
+        Assert.Contains("submit.disabled = false", felogan);
+        Assert.Contains(
+            "await api(`/v1/felogan/servings/${id}`, { method: \"DELETE\" });\n"
+            + "    refreshHistory().catch((error) => showHistoryError(error.message));",
+            felogan);
+    }
 }

@@ -36,12 +36,11 @@
     document.getElementById("felogan-room").value = selectedRoom;
     document.getElementById("felogan-cook").value = selectedCook;
 
-    const allItems = [...menuItems];
+    const itemsById = new Map(menuItems.map((item) => [item.id, item]));
     extraItems.forEach((item) => {
-      if (!allItems.some((existing) => existing.id === item.id)) {
-        allItems.push(item);
-      }
+      itemsById.set(item.id, item);
     });
+    const allItems = [...itemsById.values()];
     const groups = [
       ["plate", "Plates"],
       ["extra", "Extras"]
@@ -245,6 +244,11 @@
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submit = document.getElementById("felogan-serving-save");
+    if (submit.disabled) {
+      return;
+    }
+    submit.disabled = true;
     showError(servingError, "");
     const lines = [...document.querySelectorAll("[data-menu-qty]")]
       .map((input) => ({ menuItemId: input.dataset.menuQty, qty: Number(input.value) }))
@@ -270,6 +274,8 @@
       }
     } catch (error) {
       showError(servingError, error.message);
+    } finally {
+      submit.disabled = false;
     }
   });
 
@@ -358,7 +364,7 @@
 
   window.deleteFeloganServing = async (id) => {
     await api(`/v1/felogan/servings/${id}`, { method: "DELETE" });
-    await refreshHistory();
+    refreshHistory().catch((error) => showHistoryError(error.message));
   };
 
   window.openFeloganApp = async () => {
