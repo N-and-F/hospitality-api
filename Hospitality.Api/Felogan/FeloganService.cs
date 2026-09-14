@@ -77,15 +77,18 @@ public sealed class FeloganService(AppDbContext db)
             return (400, "VALIDATION_ERROR", "Name must be between 1 and 64 characters.", null);
         }
 
-        var normalizedName = name.ToLower();
-        var duplicate = await db.FeloganRooms.AnyAsync(
-            candidate => candidate.Id != id
-                && candidate.ArchivedAt == null
-                && candidate.Name.ToLower() == normalizedName,
-            cancellationToken);
-        if (duplicate)
+        if (room.ArchivedAt is null)
         {
-            return (409, "NAME_TAKEN", "An active room with that name already exists.", null);
+            var normalizedName = name.ToLower();
+            var duplicate = await db.FeloganRooms.AnyAsync(
+                candidate => candidate.Id != id
+                    && candidate.ArchivedAt == null
+                    && candidate.Name.ToLower() == normalizedName,
+                cancellationToken);
+            if (duplicate)
+            {
+                return (409, "NAME_TAKEN", "An active room with that name already exists.", null);
+            }
         }
 
         room.Name = name;

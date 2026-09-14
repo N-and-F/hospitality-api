@@ -131,6 +131,44 @@ public sealed class FeloganTests
         Assert.Equal("NOT_ARCHIVED", await ReadErrorCode(alreadyActive));
     }
 
+    [Fact]
+    public async Task Room_name_uniqueness_applies_only_to_active_rooms()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        var rooms = list.GetProperty("items").EnumerateArray().ToArray();
+        var roomF1Id = rooms.First(x => x.GetProperty("name").GetString() == "F1")
+            .GetProperty("id").GetGuid();
+
+        var activeRename = await client.PutAsJsonAsync(
+            $"/v1/felogan/rooms/{roomF1Id}",
+            new { name = "f2" });
+        Assert.Equal(HttpStatusCode.Conflict, activeRename.StatusCode);
+        Assert.Equal("NAME_TAKEN", await ReadErrorCode(activeRename));
+
+        var archived = await client.PostAsync($"/v1/felogan/rooms/{roomF1Id}/archive", null);
+        archived.EnsureSuccessStatusCode();
+        var replacement = await client.PostAsJsonAsync("/v1/felogan/rooms", new { name = "f1" });
+        replacement.EnsureSuccessStatusCode();
+
+        var blockedUnarchive = await client.PostAsync(
+            $"/v1/felogan/rooms/{roomF1Id}/unarchive",
+            null);
+        Assert.Equal(HttpStatusCode.Conflict, blockedUnarchive.StatusCode);
+        Assert.Equal("NAME_TAKEN", await ReadErrorCode(blockedUnarchive));
+
+        var archivedRename = await client.PutAsJsonAsync(
+            $"/v1/felogan/rooms/{roomF1Id}",
+            new { name = "F2" });
+        archivedRename.EnsureSuccessStatusCode();
+        using var renamedDoc = JsonDocument.Parse(await archivedRename.Content.ReadAsStringAsync());
+        Assert.Equal("F2", renamedDoc.RootElement.GetProperty("name").GetString());
+        Assert.NotEqual(JsonValueKind.Null, renamedDoc.RootElement.GetProperty("archivedAt").ValueKind);
+    }
+
     private static async Task AuthorizeAdminAsync(HttpClient client)
     {
         var login = await client.PostAsJsonAsync("/v1/auth/login", new
