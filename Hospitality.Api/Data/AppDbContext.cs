@@ -8,6 +8,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
 {
     public DbSet<LedgerTransaction> LedgerTransactions => Set<LedgerTransaction>();
     public DbSet<WalletOpening> WalletOpenings => Set<WalletOpening>();
+    public DbSet<FeloganRoom> FeloganRooms => Set<FeloganRoom>();
+    public DbSet<FeloganCook> FeloganCooks => Set<FeloganCook>();
+    public DbSet<FeloganMenuItem> FeloganMenuItems => Set<FeloganMenuItem>();
+    public DbSet<FeloganServing> FeloganServings => Set<FeloganServing>();
+    public DbSet<FeloganServingLine> FeloganServingLines => Set<FeloganServingLine>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -35,6 +40,56 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.Property(x => x.CashOnHand).HasPrecision(18, 2);
             entity.Property(x => x.Gcash).HasPrecision(18, 2);
             entity.Property(x => x.Tpc).HasPrecision(18, 2);
+        });
+
+        builder.Entity<FeloganRoom>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(64);
+        });
+
+        builder.Entity<FeloganCook>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(64);
+        });
+
+        builder.Entity<FeloganMenuItem>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(64);
+            entity.Property(x => x.Kind).HasMaxLength(16);
+            entity.Property(x => x.SellPrice).HasPrecision(18, 2);
+            entity.Property(x => x.Cost).HasPrecision(18, 2);
+        });
+
+        builder.Entity<FeloganServing>(entity =>
+        {
+            entity.HasIndex(x => x.ClientRequestId).IsUnique();
+            entity.HasIndex(x => x.ServedOn);
+            entity.Property(x => x.ServedOn).HasColumnType("date");
+            entity.Property(x => x.Note).HasMaxLength(200);
+            entity.HasOne(x => x.Room)
+                .WithMany()
+                .HasForeignKey(x => x.RoomId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Cook)
+                .WithMany()
+                .HasForeignKey(x => x.CookId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<FeloganServingLine>(entity =>
+        {
+            entity.Property(x => x.SnapshotName).HasMaxLength(64);
+            entity.Property(x => x.SnapshotKind).HasMaxLength(16);
+            entity.Property(x => x.SnapshotSellPrice).HasPrecision(18, 2);
+            entity.Property(x => x.SnapshotCost).HasPrecision(18, 2);
+            entity.HasOne(x => x.Serving)
+                .WithMany(x => x.Lines)
+                .HasForeignKey(x => x.ServingId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.MenuItem)
+                .WithMany()
+                .HasForeignKey(x => x.MenuItemId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
