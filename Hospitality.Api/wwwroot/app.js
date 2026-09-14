@@ -1,7 +1,10 @@
 const tokenKey = "hospitality.token";
+const appKey = "hospitality.app";
 
 const loginView = document.getElementById("login-view");
+const chooserView = document.getElementById("chooser-view");
 const appView = document.getElementById("app-view");
+const feloganView = document.getElementById("felogan-view");
 const loginForm = document.getElementById("login-form");
 const loginError = document.getElementById("login-error");
 const txnForm = document.getElementById("txn-form");
@@ -130,8 +133,9 @@ function updateProfitHint() {
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
-  if (token()) {
-    headers.Authorization = `Bearer ${token()}`;
+  const accessToken = token();
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
   }
   if (options.body && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
@@ -155,9 +159,24 @@ async function signIn(username, password) {
 
 function signOut() {
   sessionStorage.removeItem(tokenKey);
+  sessionStorage.removeItem(appKey);
   currentUser = null;
   loginView.hidden = false;
+  chooserView.hidden = true;
   appView.hidden = true;
+  feloganView.hidden = true;
+}
+
+function showChooser() {
+  loginView.hidden = true;
+  appView.hidden = true;
+  feloganView.hidden = true;
+  chooserView.hidden = false;
+}
+
+function switchApp() {
+  sessionStorage.removeItem(appKey);
+  showChooser();
 }
 
 function showSettingsScreen(name) {
@@ -198,7 +217,6 @@ function showPanel(name) {
 }
 
 async function loadApp() {
-  currentUser = await api("/v1/users/current");
   const label = `${currentUser.username} · ${(currentUser.roles || []).join(", ")}`;
   document.getElementById("who").textContent = label;
   document.getElementById("accounts-current").textContent = `Current user: ${currentUser.username}`;
@@ -206,6 +224,7 @@ async function loadApp() {
   document.getElementById("profile-role").textContent = (currentUser.roles || []).join(", ");
   adminSettings.hidden = !isAdmin();
   document.querySelector('[data-nav="settings"]').hidden = !isAdmin();
+  document.getElementById("switch-app").hidden = !isAdmin();
   historyDate.value = manilaDate();
   const txnDate = document.getElementById("txn-date");
   txnDate.value = manilaDate();
@@ -221,7 +240,33 @@ async function loadApp() {
   await refreshLedger();
   showPanel("txn");
   loginView.hidden = true;
+  chooserView.hidden = true;
+  feloganView.hidden = true;
   appView.hidden = false;
+}
+
+async function routeAuthenticatedUser(fromLogin = false) {
+  currentUser = await api("/v1/users/current");
+  if (!isAdmin()) {
+    sessionStorage.setItem(appKey, "counter");
+    await loadApp();
+    return;
+  }
+
+  if (fromLogin) {
+    sessionStorage.removeItem(appKey);
+    showChooser();
+    return;
+  }
+
+  const selectedApp = sessionStorage.getItem(appKey);
+  if (selectedApp === "felogan") {
+    await window.openFeloganApp();
+  } else if (selectedApp === "counter") {
+    await loadApp();
+  } else {
+    showChooser();
+  }
 }
 
 async function refreshLedger() {
@@ -385,7 +430,7 @@ loginForm.addEventListener("submit", async (event) => {
   submit.textContent = "Signing in…";
   try {
     await signIn(document.getElementById("username").value.trim(), document.getElementById("password").value);
-    await loadApp();
+    await routeAuthenticatedUser(true);
   } catch (error) {
     showError(loginError, error.message);
   } finally {
@@ -395,6 +440,18 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 document.getElementById("logout").addEventListener("click", signOut);
+document.getElementById("chooser-logout").addEventListener("click", signOut);
+document.getElementById("felogan-logout").addEventListener("click", signOut);
+document.getElementById("switch-app").addEventListener("click", switchApp);
+document.getElementById("felogan-switch-app").addEventListener("click", switchApp);
+document.getElementById("choose-counter").addEventListener("click", async () => {
+  sessionStorage.setItem(appKey, "counter");
+  await loadApp();
+});
+document.getElementById("choose-felogan").addEventListener("click", async () => {
+  sessionStorage.setItem(appKey, "felogan");
+  await window.openFeloganApp();
+});
 
 document.querySelectorAll("[data-nav]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -592,6 +649,13 @@ deleteConfirm.addEventListener("click", async () => {
       return;
     }
 
+    if (pendingDelete.kind === "serving") {
+      const id = pendingDelete.id;
+      await window.deleteFeloganServing(id);
+      closeDeleteModal();
+      return;
+    }
+
     await api(`/v1/transactions/${pendingDelete.id}`, { method: "DELETE" });
     closeDeleteModal();
     await refreshLedger();
@@ -699,6 +763,15 @@ document.querySelectorAll("[data-password-toggle]").forEach((button) => {
   });
 });
 
-if (token()) {
-  loadApp().catch(signOut);
-}
+window.hospitalityApi = api;
+window.hospitalityCurrentUser = () => currentUser;
+window.hospitalityPeso = peso;
+window.hospitalityEscapeHtml = escapeHtml;
+window.openHospitalityNote = openNoteModal;
+window.openHospitalityDelete = openDeleteModal;
+window.bootHospitality = () => {
+  const hasToken = Boolean(token());
+  if (hasToken) {
+    routeAuthenticatedUser().catch(signOut);
+  }
+};

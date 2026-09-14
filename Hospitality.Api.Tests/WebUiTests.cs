@@ -1,0 +1,46 @@
+using System.Net;
+
+namespace Hospitality.Api.Tests;
+
+public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
+{
+    [Fact]
+    public async Task Home_includes_chooser_felogan_shell_and_cache_busted_assets()
+    {
+        using var client = factory.CreateClient();
+
+        var html = await client.GetStringAsync("/");
+
+        Assert.Contains("id=\"chooser-view\"", html);
+        Assert.Contains("id=\"choose-felogan\"", html);
+        Assert.Contains("id=\"choose-counter\"", html);
+        Assert.Contains("id=\"felogan-view\"", html);
+        Assert.Contains("id=\"switch-app\"", html);
+        Assert.Contains("/app.css?v=felogan", html);
+        Assert.Contains("/app.js?v=felogan", html);
+        Assert.Contains("/felogan.js?v=felogan", html);
+        Assert.DoesNotContain("Sign in to the counter", html);
+    }
+
+    [Fact]
+    public async Task Scripts_include_app_selection_and_felogan_workflows()
+    {
+        using var client = factory.CreateClient();
+
+        var app = await client.GetStringAsync("/app.js");
+        var feloganResponse = await client.GetAsync("/felogan.js");
+
+        Assert.Equal(HttpStatusCode.OK, feloganResponse.StatusCode);
+        var felogan = await feloganResponse.Content.ReadAsStringAsync();
+        Assert.Contains("hospitality.app", app);
+        Assert.Contains("openFeloganApp", app);
+        Assert.Contains("window.bootHospitality", app);
+        Assert.DoesNotContain("if (token())", app);
+        Assert.Contains("window.openFeloganApp", felogan);
+        Assert.Contains("window.bootHospitality()", felogan);
+        Assert.Contains("/v1/felogan/servings", felogan);
+        Assert.Contains("includeArchived=true", felogan);
+        Assert.Contains("<th>Note</th><th>Edit</th><th>Delete</th>", felogan);
+        Assert.DoesNotContain("line.cost", felogan);
+    }
+}

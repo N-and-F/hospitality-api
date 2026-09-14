@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/app.css?v=field-icons">
+  <link rel="stylesheet" href="/app.css?v=felogan">
 </head>
 <body>
   <div id="login-view">
@@ -15,7 +15,7 @@
       <div class="login-card">
         <p class="eyebrow">N&amp;F</p>
         <h1>Guesthouse</h1>
-        <p class="muted">Sign in to the counter</p>
+        <p class="muted">Sign in</p>
         <form id="login-form">
           <label>Username
             <span class="field-with-actions">
@@ -44,6 +44,25 @@
     </div>
   </div>
 
+  <div id="chooser-view" class="chooser-screen" hidden>
+    <div class="chooser-wrap">
+      <p class="eyebrow">N&amp;F</p>
+      <h1>Choose an app</h1>
+      <p class="muted">What would you like to manage?</p>
+      <div class="chooser-grid">
+        <button type="button" id="choose-felogan" class="chooser-card">
+          <strong>Felogan</strong>
+          <span>Breakfast servings and catalog</span>
+        </button>
+        <button type="button" id="choose-counter" class="chooser-card">
+          <strong>Guesthouse Counter</strong>
+          <span>Wallets and transactions</span>
+        </button>
+      </div>
+      <button type="button" id="chooser-logout" class="text-link chooser-signout">Sign out</button>
+    </div>
+  </div>
+
   <div id="app-view" class="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand">
@@ -66,6 +85,7 @@
       </nav>
       <div class="sidebar-user">
         <p id="who"></p>
+        <button type="button" id="switch-app" class="text-link" hidden>Switch app</button>
         <button type="button" id="logout" class="text-link">Sign out</button>
       </div>
     </aside>
@@ -219,6 +239,103 @@
     </main>
   </div>
 
+  <div id="felogan-view" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark">F</span>
+        <strong>Felogan</strong>
+      </div>
+      <nav>
+        <button type="button" class="nav-btn active" data-felogan-nav="serving">New serving</button>
+        <button type="button" class="nav-btn" data-felogan-nav="history">Serving history</button>
+        <button type="button" class="nav-btn" data-felogan-nav="catalog">Catalog</button>
+      </nav>
+      <div class="sidebar-user">
+        <p id="felogan-who"></p>
+        <button type="button" id="felogan-switch-app" class="text-link">Switch app</button>
+        <button type="button" id="felogan-logout" class="text-link">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="page felogan-page">
+        <section data-felogan-panel="serving">
+          <h2 id="felogan-serving-heading">New serving</h2>
+          <form id="felogan-serving-form" class="card">
+            <div class="form-grid">
+              <label>Date <input id="felogan-serving-date" type="date" required></label>
+              <label>Room <select id="felogan-room" required></select></label>
+              <label>Cook <select id="felogan-cook" required></select></label>
+            </div>
+            <div id="felogan-menu-fields" class="menu-quantity-fields"></div>
+            <label>Note <input id="felogan-note" maxlength="200"></label>
+            <button type="submit" id="felogan-serving-save">Save serving</button>
+            <button type="button" id="felogan-serving-cancel" class="ghost" hidden>Cancel edit</button>
+            <p id="felogan-serving-error" class="error" hidden></p>
+          </form>
+        </section>
+
+        <section id="felogan-history" class="history-panel" data-felogan-panel="history" hidden>
+          <h2>Serving history</h2>
+          <div class="card history-card">
+            <div class="history-toolbar">
+              <div class="range-tabs" role="tablist">
+                <button type="button" class="range-tab active" data-felogan-range="day">Daily</button>
+                <button type="button" class="range-tab" data-felogan-range="week">Weekly</button>
+                <button type="button" class="range-tab" data-felogan-range="month">Monthly</button>
+              </div>
+              <label class="history-date">Date <input id="felogan-history-date" type="date"></label>
+            </div>
+            <div id="felogan-history-summary" class="history-summary"></div>
+            <div id="felogan-history-list" class="history-list"></div>
+          </div>
+        </section>
+
+        <section id="felogan-catalog" data-felogan-panel="catalog" hidden>
+          <h2>Catalog</h2>
+          <div class="catalog-grid">
+            <section class="card catalog-card">
+              <h3>Rooms</h3>
+              <form id="felogan-room-form" class="compact-form">
+                <input id="felogan-room-name" placeholder="Room name" maxlength="64" required>
+                <button type="submit">Add room</button>
+                <button type="button" class="ghost catalog-cancel" data-catalog-cancel="rooms" hidden>Cancel</button>
+              </form>
+              <p id="felogan-rooms-error" class="error" hidden></p>
+              <div id="felogan-rooms-list" class="list"></div>
+            </section>
+            <section class="card catalog-card">
+              <h3>Cooks</h3>
+              <form id="felogan-cook-form" class="compact-form">
+                <input id="felogan-cook-name" placeholder="Cook name" maxlength="64" required>
+                <button type="submit">Add cook</button>
+                <button type="button" class="ghost catalog-cancel" data-catalog-cancel="cooks" hidden>Cancel</button>
+              </form>
+              <p id="felogan-cooks-error" class="error" hidden></p>
+              <div id="felogan-cooks-list" class="list"></div>
+            </section>
+            <section class="card catalog-card menu-catalog">
+              <h3>Menu</h3>
+              <form id="felogan-menu-form" class="compact-form menu-form">
+                <input id="felogan-menu-name" placeholder="Item name" maxlength="64" required>
+                <select id="felogan-menu-kind" required>
+                  <option value="plate">Plate</option>
+                  <option value="extra">Extra</option>
+                </select>
+                <input id="felogan-menu-sell" type="number" min="0" step="0.01" placeholder="Sell price" required>
+                <input id="felogan-menu-cost" type="number" min="0" step="0.01" placeholder="Cost" required>
+                <button type="submit">Add menu item</button>
+                <button type="button" class="ghost catalog-cancel" data-catalog-cancel="menu-items" hidden>Cancel</button>
+              </form>
+              <p id="felogan-menu-error" class="error" hidden></p>
+              <div id="felogan-menu-list" class="list"></div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
   <div id="note-modal" class="modal" hidden>
     <div class="modal-backdrop" data-note-close></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="note-title">
@@ -243,6 +360,7 @@
     </div>
   </div>
 
-  <script src="/app.js?v=field-icons"></script>
+  <script src="/app.js?v=felogan"></script>
+  <script src="/felogan.js?v=felogan"></script>
 </body>
 </html>

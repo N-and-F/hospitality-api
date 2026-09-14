@@ -18,7 +18,7 @@ dotnet test
 dotnet run --project Hospitality.Api
 ```
 
-- Counter app: `http://localhost:8080/` (or the port in `.env`)
+- Web app: `http://localhost:8080/` (or the port in `.env`)
 - Health: `GET /health`
 - Swagger: `/docs`
 
@@ -70,6 +70,26 @@ If `profit` is omitted, the API suggests the usual fee. `clientRequestId` must b
 Methods: `cash_in`, `cash_out`, `cash_out_with_charge`, `load_via_gcash`, `load_via_tpc`, `top_up_gcash`, `top_up_tpc`, `add_cash_capital`, `expenses`, `bank_cash_deposit`.
 
 The same process also serves a simple phone-friendly counter at `/` (login, wallets, today’s rows, new transaction). Deploy once on Render; no second repo.
+
+Admins choose between **Felogan** and **Guesthouse Counter** after signing in and can switch apps without signing out. Staff continue directly to the Counter. Felogan is Admin-only and manages breakfast servings plus its room, cook, and menu catalogs.
+
+## Felogan
+
+All Felogan routes require an Admin Bearer token.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET, POST | `/v1/felogan/rooms` | List or add rooms |
+| PUT | `/v1/felogan/rooms/{id}` | Rename a room |
+| POST | `/v1/felogan/rooms/{id}/archive` or `/unarchive` | Change room availability |
+| GET, POST | `/v1/felogan/cooks` | List or add cooks |
+| PUT | `/v1/felogan/cooks/{id}` | Rename a cook |
+| POST | `/v1/felogan/cooks/{id}/archive` or `/unarchive` | Change cook availability |
+| GET, POST | `/v1/felogan/menu-items` | List or add menu items |
+| PUT | `/v1/felogan/menu-items/{id}` | Edit a menu item |
+| POST | `/v1/felogan/menu-items/{id}/archive` or `/unarchive` | Change menu availability |
+| GET, POST | `/v1/felogan/servings` | List or record servings |
+| PUT, DELETE | `/v1/felogan/servings/{id}` | Edit or delete a serving |
 
 ## Neon + Render
 
