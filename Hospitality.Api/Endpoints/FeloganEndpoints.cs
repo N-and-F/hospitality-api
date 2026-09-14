@@ -72,6 +72,126 @@ public static class FeloganEndpoints
         })
             .WithName("UnarchiveFeloganRoom");
 
+        felogan.MapGet("/cooks", async (
+            bool? includeArchived,
+            FeloganService service,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListCooksAsync(includeArchived == true, cancellationToken)))
+            .WithName("ListFeloganCooks");
+
+        felogan.MapPost("/cooks", async (
+            CatalogItemRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.CreateCookAsync(request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("CreateFeloganCook");
+
+        felogan.MapPut("/cooks/{id:guid}", async (
+            Guid id,
+            CatalogItemRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UpdateCookAsync(id, request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UpdateFeloganCook");
+
+        felogan.MapPost("/cooks/{id:guid}/archive", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.ArchiveCookAsync(id, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("ArchiveFeloganCook");
+
+        felogan.MapPost("/cooks/{id:guid}/unarchive", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UnarchiveCookAsync(id, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UnarchiveFeloganCook");
+
+        felogan.MapGet("/menu-items", async (
+            bool? includeArchived,
+            FeloganService service,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListMenuItemsAsync(includeArchived == true, cancellationToken)))
+            .WithName("ListFeloganMenuItems");
+
+        felogan.MapPost("/menu-items", async (
+            MenuItemRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.CreateMenuItemAsync(request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("CreateFeloganMenuItem");
+
+        felogan.MapPut("/menu-items/{id:guid}", async (
+            Guid id,
+            MenuItemRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UpdateMenuItemAsync(id, request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UpdateFeloganMenuItem");
+
+        felogan.MapPost("/menu-items/{id:guid}/archive", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.ArchiveMenuItemAsync(id, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("ArchiveFeloganMenuItem");
+
+        felogan.MapPost("/menu-items/{id:guid}/unarchive", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UnarchiveMenuItemAsync(id, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UnarchiveFeloganMenuItem");
+
         return group;
     }
 }

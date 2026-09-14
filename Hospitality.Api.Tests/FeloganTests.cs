@@ -10,15 +10,18 @@ namespace Hospitality.Api.Tests;
 public sealed class FeloganTests
 {
     [Fact]
-    public async Task Staff_cannot_list_felogan_rooms()
+    public async Task Staff_cannot_list_felogan_catalogs()
     {
         await using var factory = new ApiFactory();
         var client = factory.CreateClient();
         await AuthorizeStaffAsync(client, "felostaff@example.com", "felostaff");
 
-        var response = await client.GetAsync("/v1/felogan/rooms");
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal("FORBIDDEN", await ReadErrorCode(response));
+        foreach (var path in new[] { "rooms", "cooks", "menu-items" })
+        {
+            var response = await client.GetAsync($"/v1/felogan/{path}");
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal("FORBIDDEN", await ReadErrorCode(response));
+        }
     }
 
     [Fact]
@@ -167,6 +170,157 @@ public sealed class FeloganTests
         using var renamedDoc = JsonDocument.Parse(await archivedRename.Content.ReadAsStringAsync());
         Assert.Equal("F2", renamedDoc.RootElement.GetProperty("name").GetString());
         Assert.NotEqual(JsonValueKind.Null, renamedDoc.RootElement.GetProperty("archivedAt").ValueKind);
+    }
+
+    [Fact]
+    public async Task Admin_can_manage_cooks()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/cooks");
+        var cooks = list.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Contains(cooks, x => x.GetProperty("name").GetString() == "Lisa");
+        Assert.Contains(cooks, x => x.GetProperty("name").GetString() == "Melly");
+
+        var lisaId = cooks.First(x => x.GetProperty("name").GetString() == "Lisa")
+            .GetProperty("id").GetGuid();
+        var duplicate = await client.PostAsJsonAsync("/v1/felogan/cooks", new { name = "lisa" });
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal("NAME_TAKEN", await ReadErrorCode(duplicate));
+
+        var renamed = await client.PutAsJsonAsync(
+            $"/v1/felogan/cooks/{lisaId}",
+            new { name = "Chef Lisa" });
+        renamed.EnsureSuccessStatusCode();
+
+        (await client.PostAsync($"/v1/felogan/cooks/{lisaId}/archive", null))
+            .EnsureSuccessStatusCode();
+        var archivedAgain = await client.PostAsync($"/v1/felogan/cooks/{lisaId}/archive", null);
+        Assert.Equal(HttpStatusCode.Conflict, archivedAgain.StatusCode);
+        Assert.Equal("ALREADY_ARCHIVED", await ReadErrorCode(archivedAgain));
+
+        var hidden = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/cooks");
+        Assert.DoesNotContain(
+            hidden.GetProperty("items").EnumerateArray(),
+            x => x.GetProperty("id").GetGuid() == lisaId);
+        var visible = await client.GetFromJsonAsync<JsonElement>(
+            "/v1/felogan/cooks?includeArchived=true");
+        Assert.Contains(
+            visible.GetProperty("items").EnumerateArray(),
+            x => x.GetProperty("id").GetGuid() == lisaId);
+
+        (await client.PostAsJsonAsync("/v1/felogan/cooks", new { name = "chef lisa" }))
+            .EnsureSuccessStatusCode();
+        var blockedUnarchive = await client.PostAsync(
+            $"/v1/felogan/cooks/{lisaId}/unarchive",
+            null);
+        Assert.Equal(HttpStatusCode.Conflict, blockedUnarchive.StatusCode);
+        Assert.Equal("NAME_TAKEN", await ReadErrorCode(blockedUnarchive));
+
+        var archivedRename = await client.PutAsJsonAsync(
+            $"/v1/felogan/cooks/{lisaId}",
+            new { name = "Melly" });
+        archivedRename.EnsureSuccessStatusCode();
+        using var renamedDoc = JsonDocument.Parse(await archivedRename.Content.ReadAsStringAsync());
+        Assert.NotEqual(JsonValueKind.Null, renamedDoc.RootElement.GetProperty("archivedAt").ValueKind);
+
+        var missing = await client.PostAsync($"/v1/felogan/cooks/{Guid.NewGuid()}/archive", null);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("COOK_NOT_FOUND", await ReadErrorCode(missing));
+    }
+
+    [Fact]
+    public async Task Admin_can_manage_menu_items_and_validation()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+
+        var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items");
+        var items = list.GetProperty("items").EnumerateArray().ToArray();
+        var tocilog = items.First(x => x.GetProperty("name").GetString() == "Tocilog");
+        Assert.Equal("plate", tocilog.GetProperty("kind").GetString());
+        Assert.Equal(120.00m, tocilog.GetProperty("sellPrice").GetDecimal());
+        Assert.Equal(55.17m, tocilog.GetProperty("cost").GetDecimal());
+        Assert.Equal(
+            "extra",
+            items.First(x => x.GetProperty("name").GetString() == "Egg")
+                .GetProperty("kind").GetString());
+
+        foreach (var invalid in new[]
+        {
+            new { name = "Bad Kind", kind = "drink", sellPrice = 10m, cost = 1m },
+            new { name = "Bad Case", kind = "Plate", sellPrice = 10m, cost = 1m },
+            new { name = "Bad Sell", kind = "plate", sellPrice = -1m, cost = 1m },
+            new { name = "Bad Cost", kind = "extra", sellPrice = 1m, cost = -1m },
+            new { name = "Precise", kind = "plate", sellPrice = 1.001m, cost = 1m }
+        })
+        {
+            var response = await client.PostAsJsonAsync("/v1/felogan/menu-items", invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(response));
+        }
+
+        var created = await client.PostAsJsonAsync("/v1/felogan/menu-items", new
+        {
+            name = "Bangsilog",
+            kind = "plate",
+            sellPrice = 150m,
+            cost = 70m
+        });
+        created.EnsureSuccessStatusCode();
+        using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = createdDoc.RootElement.GetProperty("id").GetGuid();
+
+        var duplicate = await client.PostAsJsonAsync("/v1/felogan/menu-items", new
+        {
+            name = "bangsilog",
+            kind = "plate",
+            sellPrice = 1m,
+            cost = 1m
+        });
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal("NAME_TAKEN", await ReadErrorCode(duplicate));
+
+        var updated = await client.PutAsJsonAsync($"/v1/felogan/menu-items/{id}", new
+        {
+            name = "Bangsilog Special",
+            kind = "plate",
+            sellPrice = 175.25m,
+            cost = 80.50m
+        });
+        updated.EnsureSuccessStatusCode();
+
+        (await client.PostAsync($"/v1/felogan/menu-items/{id}/archive", null))
+            .EnsureSuccessStatusCode();
+        var archivedAgain = await client.PostAsync($"/v1/felogan/menu-items/{id}/archive", null);
+        Assert.Equal(HttpStatusCode.Conflict, archivedAgain.StatusCode);
+        Assert.Equal("ALREADY_ARCHIVED", await ReadErrorCode(archivedAgain));
+
+        var archivedUpdate = await client.PutAsJsonAsync($"/v1/felogan/menu-items/{id}", new
+        {
+            name = "Tocilog",
+            kind = "extra",
+            sellPrice = 12m,
+            cost = 5m
+        });
+        archivedUpdate.EnsureSuccessStatusCode();
+        using var archivedDoc = JsonDocument.Parse(await archivedUpdate.Content.ReadAsStringAsync());
+        Assert.NotEqual(JsonValueKind.Null, archivedDoc.RootElement.GetProperty("archivedAt").ValueKind);
+
+        var blockedUnarchive = await client.PostAsync(
+            $"/v1/felogan/menu-items/{id}/unarchive",
+            null);
+        Assert.Equal(HttpStatusCode.Conflict, blockedUnarchive.StatusCode);
+        Assert.Equal("NAME_TAKEN", await ReadErrorCode(blockedUnarchive));
+
+        var missing = await client.PostAsync(
+            $"/v1/felogan/menu-items/{Guid.NewGuid()}/unarchive",
+            null);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("MENU_ITEM_NOT_FOUND", await ReadErrorCode(missing));
     }
 
     private static async Task AuthorizeAdminAsync(HttpClient client)
