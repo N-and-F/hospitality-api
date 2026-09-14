@@ -323,6 +323,117 @@ public sealed class FeloganTests
         Assert.Equal("MENU_ITEM_NOT_FOUND", await ReadErrorCode(missing));
     }
 
+    [Fact]
+    public async Task Staff_cannot_create_servings()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "felostaff3@example.com", "felostaff3");
+
+        var response = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId = Guid.NewGuid(),
+            cookId = Guid.NewGuid(),
+            lines = Array.Empty<object>(),
+            clientRequestId = Guid.NewGuid()
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_creates_serving_and_list_totals_use_snapshot_price()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            note = "303 breakfast",
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        Assert.Equal("2026-09-06", row.RootElement.GetProperty("servedOn").GetString());
+        Assert.Equal(2, row.RootElement.GetProperty("totals").GetProperty("qty").GetInt32());
+        Assert.Equal(240.00m, row.RootElement.GetProperty("totals").GetProperty("sell").GetDecimal());
+        Assert.Equal(240.00m, row.RootElement.GetProperty("lines")[0].GetProperty("sellTotal").GetDecimal());
+        Assert.Equal(55.17m, row.RootElement.GetProperty("lines")[0].GetProperty("cost").GetDecimal());
+
+        await client.PutAsJsonAsync($"/v1/felogan/menu-items/{tocilogId}", new
+        {
+            name = "Tocilog",
+            kind = "plate",
+            sellPrice = 200m,
+            cost = 55.17m
+        });
+
+        var list = await client.GetFromJsonAsync<JsonElement>(
+            "/v1/felogan/servings?date=2026-09-06&range=day");
+        Assert.Equal(1, list.GetProperty("totals").GetProperty("count").GetInt32());
+        Assert.Equal(2, list.GetProperty("totals").GetProperty("qty").GetInt32());
+        Assert.Equal(240.00m, list.GetProperty("totals").GetProperty("sell").GetDecimal());
+        Assert.Equal(
+            240.00m,
+            list.GetProperty("items")[0].GetProperty("totals").GetProperty("sell").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Create_serving_rejects_empty_or_zero_qty_lines()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+
+        var empty = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = Array.Empty<object>(),
+            clientRequestId = Guid.NewGuid()
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
+        Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(empty));
+
+        var zero = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 0 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, zero.StatusCode);
+        Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(zero));
+    }
+
+    private static async Task<(Guid RoomId, Guid CookId, Guid TocilogId)> ServingIdsAsync(
+        HttpClient client)
+    {
+        var rooms = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/rooms");
+        var cooks = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/cooks");
+        var menu = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items");
+        return (
+            rooms.GetProperty("items").EnumerateArray()
+                .First(x => x.GetProperty("name").GetString() == "303")
+                .GetProperty("id").GetGuid(),
+            cooks.GetProperty("items").EnumerateArray()
+                .First(x => x.GetProperty("name").GetString() == "Lisa")
+                .GetProperty("id").GetGuid(),
+            menu.GetProperty("items").EnumerateArray()
+                .First(x => x.GetProperty("name").GetString() == "Tocilog")
+                .GetProperty("id").GetGuid());
+    }
+
     private static async Task AuthorizeAdminAsync(HttpClient client)
     {
         var login = await client.PostAsJsonAsync("/v1/auth/login", new

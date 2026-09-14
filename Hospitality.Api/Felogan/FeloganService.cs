@@ -461,6 +461,165 @@ public sealed class FeloganService(AppDbContext db)
         return (200, null, null, ToDto(item));
     }
 
+    public async Task<(int Status, string? Code, string? Message, ServingDto? Value)> CreateServingAsync(
+        CreateServingRequest request,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.ClientRequestId is null || request.ClientRequestId == Guid.Empty)
+        {
+            return (400, "VALIDATION_ERROR", "clientRequestId is required.", null);
+        }
+
+        var existing = await db.FeloganServings
+            .AsNoTracking()
+            .Include(serving => serving.Room)
+            .Include(serving => serving.Cook)
+            .Include(serving => serving.Lines)
+            .FirstOrDefaultAsync(
+                serving => serving.ClientRequestId == request.ClientRequestId,
+                cancellationToken);
+        if (existing is not null)
+        {
+            return existing.CreatedByUserId == userId
+                ? (200, null, null, ToDto(existing))
+                : (409, "CLIENT_REQUEST_CONFLICT", "That clientRequestId was already used.", null);
+        }
+
+        if (request.Note is { Length: > 200 })
+        {
+            return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
+        }
+
+        var requestedLines = request.Lines?.Where(line => line.Qty != 0).ToArray() ?? [];
+        if (requestedLines.Length == 0)
+        {
+            return (400, "VALIDATION_ERROR", "At least one serving line with a non-zero quantity is required.", null);
+        }
+
+        if (requestedLines.Any(line => line.Qty < 0))
+        {
+            return (400, "VALIDATION_ERROR", "Line quantities cannot be negative.", null);
+        }
+
+        var room = await db.FeloganRooms.FirstOrDefaultAsync(
+            candidate => candidate.Id == request.RoomId && candidate.ArchivedAt == null,
+            cancellationToken);
+        if (room is null)
+        {
+            return (404, "ROOM_NOT_FOUND", "Room not found.", null);
+        }
+
+        var cook = await db.FeloganCooks.FirstOrDefaultAsync(
+            candidate => candidate.Id == request.CookId && candidate.ArchivedAt == null,
+            cancellationToken);
+        if (cook is null)
+        {
+            return (404, "COOK_NOT_FOUND", "Cook not found.", null);
+        }
+
+        var menuItemIds = requestedLines.Select(line => line.MenuItemId).Distinct().ToArray();
+        var menuItems = await db.FeloganMenuItems
+            .AsNoTracking()
+            .Where(item => menuItemIds.Contains(item.Id) && item.ArchivedAt == null)
+            .ToDictionaryAsync(item => item.Id, cancellationToken);
+        if (menuItems.Count != menuItemIds.Length)
+        {
+            return (404, "MENU_ITEM_NOT_FOUND", "Menu item not found.", null);
+        }
+
+        var serving = new FeloganServing
+        {
+            Id = Guid.NewGuid(),
+            ServedOn = request.ServedOn == default ? ManilaToday() : request.ServedOn,
+            RoomId = room.Id,
+            CookId = cook.Id,
+            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
+            CreatedByUserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ClientRequestId = request.ClientRequestId.Value,
+            Room = room,
+            Cook = cook,
+            Lines = requestedLines.Select(line =>
+            {
+                var item = menuItems[line.MenuItemId];
+                return new FeloganServingLine
+                {
+                    Id = Guid.NewGuid(),
+                    MenuItemId = item.Id,
+                    SnapshotName = item.Name,
+                    SnapshotKind = item.Kind,
+                    SnapshotSellPrice = item.SellPrice,
+                    SnapshotCost = item.Cost,
+                    Qty = line.Qty
+                };
+            }).ToArray()
+        };
+
+        db.FeloganServings.Add(serving);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            var replay = await db.FeloganServings
+                .AsNoTracking()
+                .Include(candidate => candidate.Room)
+                .Include(candidate => candidate.Cook)
+                .Include(candidate => candidate.Lines)
+                .FirstOrDefaultAsync(
+                    candidate => candidate.ClientRequestId == request.ClientRequestId,
+                    cancellationToken);
+            if (replay is not null && replay.CreatedByUserId == userId)
+            {
+                return (200, null, null, ToDto(replay));
+            }
+
+            return (409, "CLIENT_REQUEST_CONFLICT", "That clientRequestId was already used.", null);
+        }
+
+        return (200, null, null, ToDto(serving));
+    }
+
+    public async Task<(int Status, string? Code, string? Message, ServingListDto? Value)> ListServingsAsync(
+        string? date,
+        string? range,
+        CancellationToken cancellationToken = default)
+    {
+        if (!DateOnly.TryParse(date, out var day))
+        {
+            day = ManilaToday();
+        }
+
+        var period = (range ?? "day").Trim().ToLowerInvariant();
+        if (period is not ("day" or "week" or "month"))
+        {
+            return (400, "VALIDATION_ERROR", "Range must be day, week, or month.", null);
+        }
+
+        var (from, exclusiveEnd) = PeriodBounds(day, period);
+        var servings = await db.FeloganServings
+            .AsNoTracking()
+            .Include(serving => serving.Room)
+            .Include(serving => serving.Cook)
+            .Include(serving => serving.Lines)
+            .Where(serving => serving.ServedOn >= from && serving.ServedOn < exclusiveEnd)
+            .OrderByDescending(serving => serving.ServedOn)
+            .ThenByDescending(serving => serving.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var items = servings.Select(ToDto).ToArray();
+        return (200, null, null, new ServingListDto(
+            day,
+            period,
+            items,
+            new ServingListTotalsDto(
+                items.Length,
+                items.Sum(item => item.Totals.Qty),
+                items.Sum(item => item.Totals.Sell))));
+    }
+
     private static CatalogFailure? ValidateName(string? requestedName, out string name)
     {
         name = requestedName?.Trim() ?? "";
@@ -560,6 +719,53 @@ public sealed class FeloganService(AppDbContext db)
 
     private static MenuItemDto ToDto(FeloganMenuItem item) =>
         new(item.Id, item.Name, item.Kind, item.SellPrice, item.Cost, item.ArchivedAt);
+
+    private static ServingDto ToDto(FeloganServing serving)
+    {
+        var lines = serving.Lines.Select(line => new ServingLineDto(
+            line.MenuItemId,
+            line.SnapshotName,
+            line.SnapshotKind,
+            line.Qty,
+            line.SnapshotSellPrice,
+            line.SnapshotCost,
+            line.Qty * line.SnapshotSellPrice)).ToArray();
+        return new ServingDto(
+            serving.Id,
+            serving.ServedOn,
+            new ServingCatalogItemDto(serving.RoomId, serving.Room.Name),
+            new ServingCatalogItemDto(serving.CookId, serving.Cook.Name),
+            serving.Note,
+            lines,
+            new ServingTotalsDto(
+                lines.Sum(line => line.Qty),
+                lines.Sum(line => line.SellTotal)),
+            serving.CreatedAt,
+            serving.ClientRequestId);
+    }
+
+    private static DateOnly ManilaToday()
+    {
+        var manilaNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, Ledger.LedgerService.Manila);
+        return DateOnly.FromDateTime(manilaNow.DateTime);
+    }
+
+    private static (DateOnly From, DateOnly ExclusiveEnd) PeriodBounds(DateOnly day, string range) =>
+        range switch
+        {
+            "week" => WeekBounds(day),
+            "month" => (
+                new DateOnly(day.Year, day.Month, 1),
+                new DateOnly(day.Year, day.Month, 1).AddMonths(1)),
+            _ => (day, day.AddDays(1))
+        };
+
+    private static (DateOnly From, DateOnly ExclusiveEnd) WeekBounds(DateOnly day)
+    {
+        var offset = ((int)day.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        var monday = day.AddDays(-offset);
+        return (monday, monday.AddDays(7));
+    }
 
     private enum CatalogKind
     {

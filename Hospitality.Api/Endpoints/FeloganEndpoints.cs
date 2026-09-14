@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Hospitality.Api.Common;
 using Hospitality.Api.Felogan;
 using Hospitality.Api.Identity;
@@ -192,6 +193,43 @@ public static class FeloganEndpoints
         })
             .WithName("UnarchiveFeloganMenuItem");
 
+        felogan.MapGet("/servings", async (
+            string? date,
+            string? range,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.ListServingsAsync(date, range, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("ListFeloganServings");
+
+        felogan.MapPost("/servings", async (
+            CreateServingRequest request,
+            FeloganService service,
+            ClaimsPrincipal user,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var userId = UserId(user);
+            if (userId is null)
+            {
+                return ApiResults.Unauthorized(http);
+            }
+
+            var result = await service.CreateServingAsync(request, userId, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("CreateFeloganServing");
+
         return group;
     }
+
+    private static string? UserId(ClaimsPrincipal user) =>
+        user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
 }
