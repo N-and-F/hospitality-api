@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/app.css?v=settlement">
+  <link rel="stylesheet" href="/app.css?v=inventory">
 </head>
 <body>
   <div id="login-view">
@@ -249,6 +249,7 @@
       <nav>
         <button type="button" class="nav-btn active" data-felogan-nav="serving">New serving</button>
         <button type="button" class="nav-btn" data-felogan-nav="history">Serving history</button>
+        <button type="button" class="nav-btn" data-felogan-nav="stock">Stock</button>
         <button type="button" class="nav-btn" data-felogan-nav="catalog">Catalog</button>
       </nav>
       <div class="sidebar-user">
@@ -311,6 +312,40 @@
           </div>
         </section>
 
+        <section id="felogan-stock" class="history-panel" data-felogan-panel="stock" hidden>
+          <h2>Stock</h2>
+          <div class="card history-card">
+            <h3>Remaining packs</h3>
+            <div id="felogan-stock-remaining" class="history-list"></div>
+          </div>
+          <div class="card">
+            <h3>Log purchase</h3>
+            <form id="felogan-purchase-form">
+              <div class="form-grid">
+                <label>Date <input id="felogan-purchase-date" type="date" required></label>
+                <label>Item <select id="felogan-purchase-item" required></select></label>
+                <label>Qty <input id="felogan-purchase-qty" type="number" min="1" step="1" required></label>
+              </div>
+              <label>Note <input id="felogan-purchase-note" maxlength="200"></label>
+              <button type="submit" id="felogan-purchase-save">Save purchase</button>
+              <p id="felogan-purchase-error" class="error" hidden></p>
+            </form>
+          </div>
+          <div class="card history-card">
+            <h3>Purchase history</h3>
+            <div class="history-toolbar">
+              <div class="range-tabs" role="tablist">
+                <button type="button" class="range-tab active" data-felogan-purchase-range="day">Daily</button>
+                <button type="button" class="range-tab" data-felogan-purchase-range="week">Weekly</button>
+                <button type="button" class="range-tab" data-felogan-purchase-range="month">Monthly</button>
+              </div>
+              <label class="history-date">Date <input id="felogan-purchase-history-date" type="date"></label>
+            </div>
+            <div id="felogan-purchase-history-summary" class="history-summary"></div>
+            <div id="felogan-purchase-history-list" class="history-list"></div>
+          </div>
+        </section>
+
         <section id="felogan-catalog" data-felogan-panel="catalog" hidden>
           <h2>Catalog</h2>
           <div class="catalog-grid">
@@ -341,6 +376,7 @@
                 <select id="felogan-menu-kind" required>
                   <option value="plate">Plate</option>
                   <option value="extra">Extra</option>
+                  <option value="stock">Stock</option>
                 </select>
                 <input id="felogan-menu-sell" type="number" min="0" step="0.01" placeholder="Sell price" required>
                 <input id="felogan-menu-cost" type="number" min="0" step="0.01" placeholder="Cost" required>
@@ -380,7 +416,7 @@
     </div>
   </div>
 
-  <script src="/app.js?v=settlement"></script>
-  <script src="/felogan.js?v=settlement"></script>
+  <script src="/app.js?v=inventory"></script>
+  <script src="/felogan.js?v=inventory"></script>
 </body>
 </html>

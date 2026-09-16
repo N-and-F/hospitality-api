@@ -16,11 +16,11 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("id=\"choose-counter\"", html);
         Assert.Contains("id=\"felogan-view\"", html);
         Assert.Contains("id=\"switch-app\"", html);
-        Assert.Contains("/app.css?v=settlement", html);
-        Assert.Contains("/app.js?v=settlement", html);
-        Assert.Contains("/felogan.js?v=settlement", html);
-        Assert.Contains("id=\"felogan-additional-profit\"", html);
-        Assert.Contains("id=\"felogan-settlement\"", html);
+        Assert.Contains("/app.css?v=inventory", html);
+        Assert.Contains("/app.js?v=inventory", html);
+        Assert.Contains("/felogan.js?v=inventory", html);
+        Assert.Contains("id=\"felogan-stock\"", html);
+        Assert.Contains("data-felogan-nav=\"stock\"", html);
         Assert.DoesNotContain("Sign in to the counter", html);
     }
 
@@ -49,7 +49,8 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.DoesNotContain("if (token())", app);
         Assert.Contains("window.openFeloganApp", felogan);
         Assert.Contains("window.bootHospitality()", felogan);
-        Assert.Contains("/v1/felogan/servings", felogan);
+        Assert.Contains("item.kind === \"plate\" || item.kind === \"extra\"", felogan);
+        Assert.Contains("/v1/felogan/purchases", felogan);
         Assert.Contains("includeArchived=true", felogan);
         Assert.Contains("<th>Profit</th><th>Cook</th><th>Paid cook</th><th>Note</th><th>Edit</th><th>Delete</th>", felogan);
         Assert.Contains(".join(\"<br>\")", felogan);
@@ -64,7 +65,7 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var felogan = await client.GetStringAsync("/felogan.js");
 
-        Assert.Contains("itemsById.set(item.id, item)", felogan);
+        Assert.Contains("itemsById.set(item.id, { ...current, ...item })", felogan);
         Assert.Contains("if (submit.disabled)", felogan);
         Assert.Contains("submit.disabled = true", felogan);
         Assert.Contains("finally", felogan);

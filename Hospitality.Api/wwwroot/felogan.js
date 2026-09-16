@@ -11,7 +11,9 @@
   let cooks = [];
   let menuItems = [];
   let servings = [];
+  let purchases = [];
   let historyRange = "day";
+  let purchaseRange = "day";
   let editingServingId = null;
   const editingCatalog = { rooms: null, cooks: null, "menu-items": null };
 
@@ -38,9 +40,10 @@
 
     const itemsById = new Map(menuItems.map((item) => [item.id, item]));
     extraItems.forEach((item) => {
-      itemsById.set(item.id, item);
+      const current = itemsById.get(item.id) || {};
+      itemsById.set(item.id, { ...current, ...item });
     });
-    const allItems = [...itemsById.values()];
+    const allItems = [...itemsById.values()].filter((item) => item.kind === "plate" || item.kind === "extra");
     const groups = [
       ["plate", "Plates"],
       ["extra", "Extras"]
@@ -54,7 +57,7 @@
         <legend>${label}</legend>
         <div class="quantity-grid">${items.map((item) => `
           <label>${escapeHtml(item.name)}
-            <span>${peso(item.sellPrice)}</span>
+            <span>${peso(item.sellPrice)}${Number.isInteger(item.remainingPacks) ? ` · ${item.remainingPacks} left` : ""}</span>
             <input type="number" min="0" step="1" value="0" data-menu-qty="${item.id}" data-sell="${item.sellPrice}" data-cost="${item.cost ?? 0}">
           </label>`).join("")}</div>
       </fieldset>`;
@@ -129,6 +132,9 @@
     }
     if (name === "catalog") {
       refreshCatalogs().catch((error) => showError(document.getElementById("felogan-menu-error"), error.message));
+    }
+    if (name === "stock") {
+      refreshStock().catch((error) => showError(document.getElementById("felogan-purchase-error"), error.message));
     }
   }
 
@@ -239,7 +245,7 @@
   function catalogItemHtml(type, item) {
     const archived = Boolean(item.archivedAt);
     const details = type === "menu-items"
-      ? `<small>${escapeHtml(item.kind)} · Sell ${peso(item.sellPrice)} · Cost ${peso(item.cost)}</small>`
+      ? `<small>${escapeHtml(item.kind)} · Sell ${peso(item.sellPrice)} · Cost ${peso(item.cost)} · ${item.remainingPacks} left</small>`
       : "";
     return `<div class="item ${archived ? "archived" : ""}">
       <b>${escapeHtml(item.name)}${archived ? " · Archived" : ""}</b>
@@ -438,6 +444,124 @@
     refreshHistory().catch((error) => showHistoryError(error.message));
   };
 
+  function showPurchaseHistoryError(message) {
+    const summary = document.getElementById("felogan-purchase-history-summary");
+    summary.className = "history-summary-error";
+    summary.textContent = message;
+  }
+
+  function renderPurchaseItemOptions() {
+    const select = document.getElementById("felogan-purchase-item");
+    const selected = select.value;
+    select.innerHTML = menuItems.map((item) =>
+      `<option value="${item.id}">${escapeHtml(item.name)} (${escapeHtml(item.kind)})</option>`).join("");
+    if ([...select.options].some((candidate) => candidate.value === selected)) {
+      select.value = selected;
+    }
+  }
+
+  async function refreshStock() {
+    await loadServingCatalogs();
+    renderPurchaseItemOptions();
+    document.getElementById("felogan-stock-remaining").innerHTML = menuItems.length
+      ? `<table class="history-table">
+          <thead><tr><th>Item</th><th>Kind</th><th>Remaining</th></tr></thead>
+          <tbody>${menuItems.map((item) => `<tr>
+            <td data-label="Item">${escapeHtml(item.name)}</td>
+            <td data-label="Kind">${escapeHtml(item.kind)}</td>
+            <td data-label="Remaining" class="num">${item.remainingPacks}</td>
+          </tr>`).join("")}</tbody>
+        </table>`
+      : `<p class="muted history-empty">No catalog items.</p>`;
+    await refreshPurchaseHistory();
+  }
+
+  async function refreshPurchaseHistory() {
+    const date = document.getElementById("felogan-purchase-history-date").value || manilaDate();
+    const data = await api(`/v1/felogan/purchases?date=${date}&range=${purchaseRange}`);
+    purchases = data.items || [];
+    const summary = document.getElementById("felogan-purchase-history-summary");
+    summary.className = "history-summary";
+    summary.innerHTML = `
+      <div><span>Purchases</span><strong>${data.totals.count}</strong></div>
+      <div><span>Qty</span><strong>${data.totals.qty}</strong></div>`;
+    document.getElementById("felogan-purchase-history-list").innerHTML = purchases.length
+      ? `<table class="history-table">
+          <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Note</th><th>Delete</th></tr></thead>
+          <tbody>${purchases.map((purchase) => `<tr>
+            <td data-label="Date">${escapeHtml(purchase.purchasedOn)}</td>
+            <td data-label="Item">${escapeHtml(purchase.item.name)}</td>
+            <td data-label="Qty" class="num">${purchase.qty}</td>
+            <td data-label="Note">${purchase.note ? `<button type="button" class="text-link" data-purchase-note="${purchase.id}">View</button>` : "—"}</td>
+            <td data-label="Delete"><button type="button" class="text-link danger" data-purchase-delete="${purchase.id}">Delete</button></td>
+          </tr>`).join("")}</tbody>
+        </table>`
+      : `<p class="muted history-empty">No purchases for this period.</p>`;
+  }
+
+  window.deleteFeloganPurchase = async (id) => {
+    await api(`/v1/felogan/purchases/${id}`, { method: "DELETE" });
+    refreshStock().catch((error) => showError(document.getElementById("felogan-purchase-error"), error.message));
+  };
+
+  document.getElementById("felogan-purchase-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = document.getElementById("felogan-purchase-save");
+    if (submit.disabled) {
+      return;
+    }
+    submit.disabled = true;
+    showError(document.getElementById("felogan-purchase-error"), "");
+    try {
+      await api("/v1/felogan/purchases", {
+        method: "POST",
+        body: JSON.stringify({
+          purchasedOn: document.getElementById("felogan-purchase-date").value,
+          menuItemId: document.getElementById("felogan-purchase-item").value,
+          qty: Number(document.getElementById("felogan-purchase-qty").value),
+          note: document.getElementById("felogan-purchase-note").value.trim(),
+          clientRequestId: crypto.randomUUID()
+        })
+      });
+      document.getElementById("felogan-purchase-form").reset();
+      document.getElementById("felogan-purchase-date").value = manilaDate();
+      await refreshStock();
+    } catch (error) {
+      showError(document.getElementById("felogan-purchase-error"), error.message);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  document.querySelectorAll("[data-felogan-purchase-range]").forEach((button) => {
+    button.addEventListener("click", () => {
+      purchaseRange = button.dataset.feloganPurchaseRange;
+      document.querySelectorAll("[data-felogan-purchase-range]").forEach((tab) => tab.classList.toggle("active", tab === button));
+      refreshPurchaseHistory().catch((error) => showPurchaseHistoryError(error.message));
+    });
+  });
+
+  document.getElementById("felogan-purchase-history-date").addEventListener("change", () => {
+    refreshPurchaseHistory().catch((error) => showPurchaseHistoryError(error.message));
+  });
+
+  document.getElementById("felogan-purchase-history-list").addEventListener("click", (event) => {
+    const note = event.target.closest("[data-purchase-note]");
+    const remove = event.target.closest("[data-purchase-delete]");
+    const id = note?.dataset.purchaseNote || remove?.dataset.purchaseDelete;
+    const purchase = purchases.find((item) => item.id === id);
+    if (note && purchase?.note) {
+      window.openHospitalityNote(purchase.note);
+    } else if (remove && purchase) {
+      window.openHospitalityDelete({
+        kind: "purchase",
+        id: purchase.id,
+        title: "Delete purchase",
+        copy: `Delete ${purchase.qty}× ${purchase.item.name}? This cannot be undone.`
+      });
+    }
+  });
+
   window.openFeloganApp = async () => {
     const user = window.hospitalityCurrentUser();
     document.getElementById("felogan-who").textContent = `${user.username} · ${(user.roles || []).join(", ")}`;
@@ -447,6 +571,8 @@
     view.hidden = false;
     historyDate.value = manilaDate();
     document.getElementById("felogan-serving-date").value = manilaDate();
+    document.getElementById("felogan-purchase-date").value = manilaDate();
+    document.getElementById("felogan-purchase-history-date").value = manilaDate();
     await loadServingCatalogs();
     resetServingForm();
     showPanel("serving");

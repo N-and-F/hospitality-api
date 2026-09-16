@@ -853,6 +853,91 @@ public sealed class FeloganTests
         Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(bad));
     }
 
+    [Fact]
+    public async Task Seed_sets_opening_remaining_including_negative_egg()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var menu = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items?includeArchived=true");
+        var egg = menu.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("name").GetString() == "Egg");
+        Assert.Equal(-7, egg.GetProperty("remainingPacks").GetInt32());
+        Assert.Equal(-7, egg.GetProperty("openingPacks").GetInt32());
+        var hotsilog = menu.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("name").GetString() == "Hotsilog");
+        Assert.Equal(28, hotsilog.GetProperty("remainingPacks").GetInt32());
+        var cups = menu.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("name").GetString() == "Paper cups");
+        Assert.Equal("stock", cups.GetProperty("kind").GetString());
+        Assert.Equal(0, cups.GetProperty("remainingPacks").GetInt32());
+    }
+
+    [Fact]
+    public async Task Purchase_and_serving_adjust_remaining()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var beforeItem = (await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items"))
+            .GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == tocilogId);
+        var before = beforeItem.GetProperty("remainingPacks").GetInt32();
+        Assert.Equal(3, beforeItem.GetProperty("openingPacks").GetInt32());
+        Assert.Equal(3, before);
+
+        var purchase = await client.PostAsJsonAsync("/v1/felogan/purchases", new
+        {
+            purchasedOn = "2026-09-06",
+            menuItemId = tocilogId,
+            qty = 5,
+            clientRequestId = Guid.NewGuid()
+        });
+        purchase.EnsureSuccessStatusCode();
+        using var purchaseDoc = JsonDocument.Parse(await purchase.Content.ReadAsStringAsync());
+        Assert.Equal(5, purchaseDoc.RootElement.GetProperty("qty").GetInt32());
+        Assert.Equal(tocilogId, purchaseDoc.RootElement.GetProperty("item").GetProperty("id").GetGuid());
+        var afterBuy = (await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items"))
+            .GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == tocilogId)
+            .GetProperty("remainingPacks").GetInt32();
+        Assert.Equal(before + 5, afterBuy);
+
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var servingId = row.RootElement.GetProperty("id").GetGuid();
+        var afterServe = (await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items"))
+            .GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == tocilogId)
+            .GetProperty("remainingPacks").GetInt32();
+        Assert.Equal(before + 5 - 2, afterServe);
+
+        (await client.DeleteAsync($"/v1/felogan/servings/{servingId}")).EnsureSuccessStatusCode();
+        var afterDelete = (await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items"))
+            .GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == tocilogId)
+            .GetProperty("remainingPacks").GetInt32();
+        Assert.Equal(before + 5, afterDelete);
+    }
+
+    [Fact]
+    public async Task Staff_cannot_list_purchases()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "invstaff@example.com", "invstaff");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/v1/felogan/purchases")).StatusCode);
+    }
+
     private static async Task<(Guid RoomId, Guid CookId, Guid TocilogId)> ServingIdsAsync(
         HttpClient client)
     {

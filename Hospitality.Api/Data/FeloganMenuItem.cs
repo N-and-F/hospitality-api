@@ -7,6 +7,7 @@ public sealed class FeloganMenuItem
     public required string Kind { get; set; }
     public decimal SellPrice { get; set; }
     public decimal Cost { get; set; }
+    public int OpeningPacks { get; set; }
     public int SortOrder { get; set; }
     public DateTimeOffset? ArchivedAt { get; set; }
 }

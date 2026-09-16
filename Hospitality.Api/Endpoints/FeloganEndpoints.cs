@@ -254,6 +254,53 @@ public static class FeloganEndpoints
         })
             .WithName("DeleteFeloganServing");
 
+        felogan.MapGet("/purchases", async (
+            string? date,
+            string? range,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.ListPurchasesAsync(date, range, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("ListFeloganPurchases");
+
+        felogan.MapPost("/purchases", async (
+            CreatePurchaseRequest request,
+            FeloganService service,
+            ClaimsPrincipal user,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var userId = UserId(user);
+            if (userId is null)
+            {
+                return ApiResults.Unauthorized(http);
+            }
+
+            var result = await service.CreatePurchaseAsync(request, userId, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("CreateFeloganPurchase");
+
+        felogan.MapDelete("/purchases/{id:guid}", async (
+            Guid id,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.DeletePurchaseAsync(id, cancellationToken);
+            return result.Id is not null
+                ? Results.Ok(new { id = result.Id.Value })
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("DeleteFeloganPurchase");
+
         return group;
     }
 

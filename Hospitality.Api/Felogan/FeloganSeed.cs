@@ -37,23 +37,27 @@ public static class FeloganSeed
 
         if (!await db.FeloganMenuItems.AnyAsync(cancellationToken))
         {
-            var menu = new (string Name, string Kind, decimal SellPrice, decimal Cost)[]
+            var menu = new (string Name, string Kind, decimal SellPrice, decimal Cost, int OpeningPacks)[]
             {
-                ("Danggit Silog", "plate", 140.00m, 61.83m),
-                ("Longsilog", "plate", 120.00m, 48.50m),
-                ("Tocilog", "plate", 120.00m, 55.17m),
-                ("Hotsilog", "plate", 110.00m, 42.79m),
-                ("Hamsilog", "plate", 120.00m, 53.50m),
-                ("Cornsilog", "plate", 130.00m, 48.00m),
-                ("Danggit", "extra", 50.00m, 33.33m),
-                ("Longganisa", "extra", 30.00m, 20.00m),
-                ("Tocino", "extra", 30.00m, 26.67m),
-                ("Hotdog", "extra", 30.00m, 14.29m),
-                ("Ham", "extra", 30.00m, 25.00m),
-                ("Corned beef", "extra", 30.00m, 19.50m),
-                ("Egg", "extra", 15.00m, 8.50m),
-                ("Rice", "extra", 15.00m, 10.00m),
-                ("Coffee stick", "extra", 7.00m, 5.00m)
+                ("Danggit Silog", "plate", 140.00m, 61.83m, 1),
+                ("Longsilog", "plate", 120.00m, 48.50m, 7),
+                ("Tocilog", "plate", 120.00m, 55.17m, 3),
+                ("Hotsilog", "plate", 110.00m, 42.79m, 28),
+                ("Hamsilog", "plate", 120.00m, 53.50m, 12),
+                ("Cornsilog", "plate", 130.00m, 48.00m, 5),
+                ("Danggit", "extra", 50.00m, 33.33m, 1),
+                ("Longganisa", "extra", 30.00m, 20.00m, 7),
+                ("Tocino", "extra", 30.00m, 26.67m, 3),
+                ("Hotdog", "extra", 30.00m, 14.29m, 28),
+                ("Ham", "extra", 30.00m, 25.00m, 12),
+                ("Corned beef", "extra", 30.00m, 19.50m, 5),
+                ("Egg", "extra", 15.00m, 8.50m, -7),
+                ("Rice", "extra", 15.00m, 10.00m, 0),
+                ("Coffee stick", "extra", 7.00m, 5.00m, 0),
+                ("Paper cups", "stock", 0m, 0m, 0),
+                ("Fork", "stock", 0m, 0m, 0),
+                ("Spoon", "stock", 0m, 0m, 0),
+                ("Canton", "stock", 0m, 0m, 0)
             };
 
             for (var i = 0; i < menu.Length; i++)
@@ -65,6 +69,7 @@ public static class FeloganSeed
                     Kind = menu[i].Kind,
                     SellPrice = menu[i].SellPrice,
                     Cost = menu[i].Cost,
+                    OpeningPacks = menu[i].OpeningPacks,
                     SortOrder = i
                 });
             }

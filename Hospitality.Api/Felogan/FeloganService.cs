@@ -314,16 +314,10 @@ public sealed class FeloganService(AppDbContext db)
         var items = await query
             .OrderBy(item => item.SortOrder)
             .ThenBy(item => item.Name)
-            .Select(item => new MenuItemDto(
-                item.Id,
-                item.Name,
-                item.Kind,
-                item.SellPrice,
-                item.Cost,
-                item.ArchivedAt))
             .ToListAsync(cancellationToken);
+        var remaining = await RemainingByItemIdAsync(items, cancellationToken);
 
-        return new MenuItemListDto(items);
+        return new MenuItemListDto(items.Select(item => ToDto(item, remaining[item.Id])).ToArray());
     }
 
     public async Task<(int Status, string? Code, string? Message, MenuItemDto? Value)> CreateMenuItemAsync(
@@ -357,12 +351,13 @@ public sealed class FeloganService(AppDbContext db)
             Kind = request.Kind,
             SellPrice = request.SellPrice,
             Cost = request.Cost,
+            OpeningPacks = 0,
             SortOrder = (maxSortOrder ?? -1) + 1
         };
 
         db.FeloganMenuItems.Add(item);
         await db.SaveChangesAsync(cancellationToken);
-        return (200, null, null, ToDto(item));
+        return (200, null, null, ToDto(item, 0));
     }
 
     public async Task<(int Status, string? Code, string? Message, MenuItemDto? Value)> UpdateMenuItemAsync(
@@ -401,7 +396,7 @@ public sealed class FeloganService(AppDbContext db)
         item.SellPrice = request.SellPrice;
         item.Cost = request.Cost;
         await db.SaveChangesAsync(cancellationToken);
-        return (200, null, null, ToDto(item));
+        return (200, null, null, await ToDtoAsync(item, cancellationToken));
     }
 
     public async Task<(int Status, string? Code, string? Message, MenuItemDto? Value)> ArchiveMenuItemAsync(
@@ -424,7 +419,7 @@ public sealed class FeloganService(AppDbContext db)
 
         item.ArchivedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        return (200, null, null, ToDto(item));
+        return (200, null, null, await ToDtoAsync(item, cancellationToken));
     }
 
     public async Task<(int Status, string? Code, string? Message, MenuItemDto? Value)> UnarchiveMenuItemAsync(
@@ -458,7 +453,7 @@ public sealed class FeloganService(AppDbContext db)
 
         item.ArchivedAt = null;
         await db.SaveChangesAsync(cancellationToken);
-        return (200, null, null, ToDto(item));
+        return (200, null, null, await ToDtoAsync(item, cancellationToken));
     }
 
     public async Task<(int Status, string? Code, string? Message, ServingDto? Value)> CreateServingAsync(
@@ -741,17 +736,148 @@ public sealed class FeloganService(AppDbContext db)
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var serving = await db.FeloganServings.SingleOrDefaultAsync(
-            candidate => candidate.Id == id,
-            cancellationToken);
+        var serving = await db.FeloganServings
+            .Include(candidate => candidate.Lines)
+            .SingleOrDefaultAsync(
+                candidate => candidate.Id == id,
+                cancellationToken);
         if (serving is null)
         {
             return (404, "SERVING_NOT_FOUND", "Serving not found.", null);
         }
 
+        db.FeloganServingLines.RemoveRange(serving.Lines);
         db.FeloganServings.Remove(serving);
         await db.SaveChangesAsync(cancellationToken);
         return (200, null, null, serving.Id);
+    }
+
+    public async Task<(int Status, string? Code, string? Message, PurchaseDto? Value)> CreatePurchaseAsync(
+        CreatePurchaseRequest request,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.ClientRequestId is null || request.ClientRequestId == Guid.Empty)
+        {
+            return (400, "VALIDATION_ERROR", "clientRequestId is required.", null);
+        }
+
+        var existing = await db.FeloganPurchases
+            .AsNoTracking()
+            .Include(purchase => purchase.MenuItem)
+            .FirstOrDefaultAsync(
+                purchase => purchase.ClientRequestId == request.ClientRequestId,
+                cancellationToken);
+        if (existing is not null)
+        {
+            return existing.CreatedByUserId == userId
+                ? (200, null, null, ToDto(existing))
+                : (409, "CLIENT_REQUEST_CONFLICT", "That clientRequestId was already used.", null);
+        }
+
+        if (request.Note is { Length: > 200 })
+        {
+            return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
+        }
+
+        if (request.Qty <= 0)
+        {
+            return (400, "VALIDATION_ERROR", "Quantity must be greater than zero.", null);
+        }
+
+        var menuItem = await db.FeloganMenuItems.FirstOrDefaultAsync(
+            candidate => candidate.Id == request.MenuItemId,
+            cancellationToken);
+        if (menuItem is null)
+        {
+            return (404, "MENU_ITEM_NOT_FOUND", "Menu item not found.", null);
+        }
+
+        var purchase = new FeloganPurchase
+        {
+            Id = Guid.NewGuid(),
+            PurchasedOn = request.PurchasedOn is null ? ManilaToday() : request.PurchasedOn.Value,
+            MenuItemId = menuItem.Id,
+            Qty = request.Qty,
+            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
+            CreatedByUserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ClientRequestId = request.ClientRequestId.Value,
+            MenuItem = menuItem
+        };
+
+        db.FeloganPurchases.Add(purchase);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            var replay = await db.FeloganPurchases
+                .AsNoTracking()
+                .Include(candidate => candidate.MenuItem)
+                .FirstOrDefaultAsync(
+                    candidate => candidate.ClientRequestId == request.ClientRequestId,
+                    cancellationToken);
+            if (replay is not null && replay.CreatedByUserId == userId)
+            {
+                return (200, null, null, ToDto(replay));
+            }
+
+            return (409, "CLIENT_REQUEST_CONFLICT", "That clientRequestId was already used.", null);
+        }
+
+        return (200, null, null, ToDto(purchase));
+    }
+
+    public async Task<(int Status, string? Code, string? Message, Guid? Id)> DeletePurchaseAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var purchase = await db.FeloganPurchases.SingleOrDefaultAsync(
+            candidate => candidate.Id == id,
+            cancellationToken);
+        if (purchase is null)
+        {
+            return (404, "PURCHASE_NOT_FOUND", "Purchase not found.", null);
+        }
+
+        db.FeloganPurchases.Remove(purchase);
+        await db.SaveChangesAsync(cancellationToken);
+        return (200, null, null, purchase.Id);
+    }
+
+    public async Task<(int Status, string? Code, string? Message, PurchaseListDto? Value)> ListPurchasesAsync(
+        string? date,
+        string? range,
+        CancellationToken cancellationToken = default)
+    {
+        if (!DateOnly.TryParse(date, out var day))
+        {
+            day = ManilaToday();
+        }
+
+        var period = (range ?? "day").Trim().ToLowerInvariant();
+        if (period is not ("day" or "week" or "month"))
+        {
+            return (400, "VALIDATION_ERROR", "Range must be day, week, or month.", null);
+        }
+
+        var (from, exclusiveEnd) = PeriodBounds(day, period);
+        var purchases = await db.FeloganPurchases
+            .AsNoTracking()
+            .Include(purchase => purchase.MenuItem)
+            .Where(purchase => purchase.PurchasedOn >= from && purchase.PurchasedOn < exclusiveEnd)
+            .OrderByDescending(purchase => purchase.PurchasedOn)
+            .ThenByDescending(purchase => purchase.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var items = purchases.Select(ToDto).ToArray();
+        return (200, null, null, new PurchaseListDto(
+            day,
+            period,
+            items,
+            new PurchaseListTotalsDto(items.Length, items.Sum(item => item.Qty))));
     }
 
     public async Task<(int Status, string? Code, string? Message, ServingListDto? Value)> ListServingsAsync(
@@ -856,9 +982,9 @@ public sealed class FeloganService(AppDbContext db)
             return nameFailure;
         }
 
-        if (request.Kind is not ("plate" or "extra"))
+        if (request.Kind is not ("plate" or "extra" or "stock"))
         {
-            return new CatalogFailure(400, "VALIDATION_ERROR", "Kind must be plate or extra.");
+            return new CatalogFailure(400, "VALIDATION_ERROR", "Kind must be plate, extra, or stock.");
         }
 
         return request.SellPrice < 0
@@ -895,8 +1021,53 @@ public sealed class FeloganService(AppDbContext db)
     private static CatalogItemDto ToDto(FeloganCook cook) =>
         new(cook.Id, cook.Name, cook.ArchivedAt);
 
-    private static MenuItemDto ToDto(FeloganMenuItem item) =>
-        new(item.Id, item.Name, item.Kind, item.SellPrice, item.Cost, item.ArchivedAt);
+    private static MenuItemDto ToDto(FeloganMenuItem item, int remainingPacks) =>
+        new(item.Id, item.Name, item.Kind, item.SellPrice, item.Cost, item.OpeningPacks, remainingPacks, item.ArchivedAt);
+
+    private async Task<MenuItemDto> ToDtoAsync(FeloganMenuItem item, CancellationToken cancellationToken)
+    {
+        var remaining = await RemainingByItemIdAsync([item], cancellationToken);
+        return ToDto(item, remaining[item.Id]);
+    }
+
+    private async Task<Dictionary<Guid, int>> RemainingByItemIdAsync(
+        IReadOnlyCollection<FeloganMenuItem> items,
+        CancellationToken cancellationToken)
+    {
+        var ids = items.Select(item => item.Id).ToArray();
+        var purchasedRows = await db.FeloganPurchases
+            .AsNoTracking()
+            .Where(purchase => ids.Contains(purchase.MenuItemId))
+            .Select(purchase => new { purchase.MenuItemId, purchase.Qty })
+            .ToListAsync(cancellationToken);
+        var servedRows = await db.FeloganServingLines
+            .AsNoTracking()
+            .Where(line => ids.Contains(line.MenuItemId))
+            .Select(line => new { line.MenuItemId, line.Qty })
+            .ToListAsync(cancellationToken);
+        var purchased = purchasedRows
+            .GroupBy(row => row.MenuItemId)
+            .ToDictionary(group => group.Key, group => group.Sum(row => row.Qty));
+        var served = servedRows
+            .GroupBy(row => row.MenuItemId)
+            .ToDictionary(group => group.Key, group => group.Sum(row => row.Qty));
+
+        return items.ToDictionary(
+            item => item.Id,
+            item => item.OpeningPacks
+                + purchased.GetValueOrDefault(item.Id)
+                - served.GetValueOrDefault(item.Id));
+    }
+
+    private static PurchaseDto ToDto(FeloganPurchase purchase) =>
+        new(
+            purchase.Id,
+            purchase.PurchasedOn,
+            new ServingCatalogItemDto(purchase.MenuItemId, purchase.MenuItem.Name),
+            purchase.Qty,
+            purchase.Note,
+            purchase.CreatedAt,
+            purchase.ClientRequestId);
 
     private static ServingDto ToDto(FeloganServing serving)
     {

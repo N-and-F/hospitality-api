@@ -660,6 +660,13 @@ deleteConfirm.addEventListener("click", async () => {
       return;
     }
 
+    if (pendingDelete.kind === "purchase") {
+      const id = pendingDelete.id;
+      await window.deleteFeloganPurchase(id);
+      closeDeleteModal();
+      return;
+    }
+
     if (pendingDelete.kind === "serving") {
       const id = pendingDelete.id;
       await window.deleteFeloganServing(id);

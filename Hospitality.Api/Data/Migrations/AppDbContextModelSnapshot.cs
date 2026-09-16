@@ -67,6 +67,11 @@ namespace Hospitality.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int>("OpeningPacks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<decimal>("SellPrice")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -77,6 +82,47 @@ namespace Hospitality.Api.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("FeloganMenuItems");
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.FeloganPurchase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClientRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("MenuItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateOnly>("PurchasedOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Qty")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("MenuItemId");
+
+                    b.HasIndex("PurchasedOn");
+
+                    b.ToTable("FeloganPurchases");
                 });
 
             modelBuilder.Entity("Hospitality.Api.Data.FeloganRoom", b =>
@@ -505,6 +551,17 @@ namespace Hospitality.Api.Data.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.FeloganPurchase", b =>
+                {
+                    b.HasOne("Hospitality.Api.Data.FeloganMenuItem", "MenuItem")
+                        .WithMany()
+                        .HasForeignKey("MenuItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MenuItem");
                 });
 
             modelBuilder.Entity("Hospitality.Api.Data.FeloganServing", b =>

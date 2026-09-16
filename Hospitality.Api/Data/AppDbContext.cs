@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<FeloganMenuItem> FeloganMenuItems => Set<FeloganMenuItem>();
     public DbSet<FeloganServing> FeloganServings => Set<FeloganServing>();
     public DbSet<FeloganServingLine> FeloganServingLines => Set<FeloganServingLine>();
+    public DbSet<FeloganPurchase> FeloganPurchases => Set<FeloganPurchase>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -58,6 +59,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.Property(x => x.Kind).HasMaxLength(16);
             entity.Property(x => x.SellPrice).HasPrecision(18, 2);
             entity.Property(x => x.Cost).HasPrecision(18, 2);
+            entity.Property(x => x.OpeningPacks).HasDefaultValue(0);
         });
 
         builder.Entity<FeloganServing>(entity =>
@@ -90,6 +92,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
                 .WithMany(x => x.Lines)
                 .HasForeignKey(x => x.ServingId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.MenuItem)
+                .WithMany()
+                .HasForeignKey(x => x.MenuItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<FeloganPurchase>(entity =>
+        {
+            entity.HasIndex(x => x.ClientRequestId).IsUnique();
+            entity.HasIndex(x => x.PurchasedOn);
+            entity.Property(x => x.PurchasedOn).HasColumnType("date");
+            entity.Property(x => x.Note).HasMaxLength(200);
             entity.HasOne(x => x.MenuItem)
                 .WithMany()
                 .HasForeignKey(x => x.MenuItemId)

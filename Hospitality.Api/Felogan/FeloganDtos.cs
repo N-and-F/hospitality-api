@@ -23,6 +23,8 @@ public sealed record MenuItemDto(
     string Kind,
     decimal SellPrice,
     decimal Cost,
+    int OpeningPacks,
+    int RemainingPacks,
     DateTimeOffset? ArchivedAt);
 
 public sealed record MenuItemListDto(IReadOnlyList<MenuItemDto> Items);
@@ -112,3 +114,29 @@ public sealed record ServingListDto(
     string Range,
     IReadOnlyList<ServingDto> Items,
     ServingListTotalsDto Totals);
+
+public sealed class CreatePurchaseRequest
+{
+    public DateOnly? PurchasedOn { get; set; }
+    public Guid MenuItemId { get; set; }
+    public int Qty { get; set; }
+    public string? Note { get; set; }
+    public Guid? ClientRequestId { get; set; }
+}
+
+public sealed record PurchaseDto(
+    Guid Id,
+    DateOnly PurchasedOn,
+    ServingCatalogItemDto Item,
+    int Qty,
+    string? Note,
+    DateTimeOffset CreatedAt,
+    Guid ClientRequestId);
+
+public sealed record PurchaseListTotalsDto(int Count, int Qty);
+
+public sealed record PurchaseListDto(
+    DateOnly Date,
+    string Range,
+    IReadOnlyList<PurchaseDto> Items,
+    PurchaseListTotalsDto Totals);
