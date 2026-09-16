@@ -88,6 +88,14 @@
     }
   }
 
+  function servingSummary(lines) {
+    const rank = (kind) => (kind === "plate" ? 0 : kind === "extra" ? 1 : 2);
+    return [...lines]
+      .sort((a, b) => rank(a.kind) - rank(b.kind))
+      .map((item) => `${item.qty}× ${escapeHtml(item.name)}`)
+      .join("<br>");
+  }
+
   function showHistoryError(message) {
     const summary = document.getElementById("felogan-history-summary");
     summary.className = "history-summary-error";
@@ -110,7 +118,7 @@
             <td data-label="Date">${escapeHtml(serving.servedOn)}</td>
             <td data-label="Room">${escapeHtml(serving.room.name)}</td>
             <td data-label="Cook">${escapeHtml(serving.cook.name)}</td>
-            <td data-label="Summary">${serving.lines.map((item) => `${item.qty}× ${escapeHtml(item.name)}`).join(", ")}</td>
+            <td data-label="Summary">${servingSummary(serving.lines)}</td>
             <td data-label="Sell" class="num">${peso(serving.totals.sell)}</td>
             <td data-label="Note">${serving.note ? `<button type="button" class="text-link" data-serving-note="${serving.id}">View</button>` : "—"}</td>
             <td data-label="Edit"><button type="button" class="text-link" data-serving-edit="${serving.id}">Edit</button></td>

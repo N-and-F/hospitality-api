@@ -16,9 +16,9 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("id=\"choose-counter\"", html);
         Assert.Contains("id=\"felogan-view\"", html);
         Assert.Contains("id=\"switch-app\"", html);
-        Assert.Contains("/app.css?v=felogan", html);
-        Assert.Contains("/app.js?v=felogan", html);
-        Assert.Contains("/felogan.js?v=felogan", html);
+        Assert.Contains("/app.css?v=felogan-nl", html);
+        Assert.Contains("/app.js?v=felogan-nl", html);
+        Assert.Contains("/felogan.js?v=felogan-nl", html);
         Assert.DoesNotContain("Sign in to the counter", html);
     }
 
@@ -50,6 +50,7 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("/v1/felogan/servings", felogan);
         Assert.Contains("includeArchived=true", felogan);
         Assert.Contains("<th>Note</th><th>Edit</th><th>Delete</th>", felogan);
+        Assert.Contains(".join(\"<br>\")", felogan);
         Assert.DoesNotContain("line.cost", felogan);
     }
 

@@ -622,6 +622,11 @@ button.ghost {
   grid-template-columns: 1fr;
 }
 
+.history-table td[data-label="Summary"] {
+  vertical-align: top;
+  line-height: 1.4;
+}
+
 .history-table td[data-label="Note"] {
   white-space: nowrap;
 }
