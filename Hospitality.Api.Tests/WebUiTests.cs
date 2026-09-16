@@ -16,9 +16,9 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("id=\"choose-counter\"", html);
         Assert.Contains("id=\"felogan-view\"", html);
         Assert.Contains("id=\"switch-app\"", html);
-        Assert.Contains("/app.css?v=inventory", html);
-        Assert.Contains("/app.js?v=inventory", html);
-        Assert.Contains("/felogan.js?v=inventory", html);
+        Assert.Contains("/app.css?v=costing", html);
+        Assert.Contains("/app.js?v=costing", html);
+        Assert.Contains("/felogan.js?v=costing", html);
         Assert.Contains("id=\"felogan-stock\"", html);
         Assert.Contains("data-felogan-nav=\"stock\"", html);
         Assert.DoesNotContain("Sign in to the counter", html);
@@ -50,6 +50,7 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("window.openFeloganApp", felogan);
         Assert.Contains("window.bootHospitality()", felogan);
         Assert.Contains("item.kind === \"plate\" || item.kind === \"extra\"", felogan);
+        Assert.Contains("Cook 40%", felogan);
         Assert.Contains("/v1/felogan/purchases", felogan);
         Assert.Contains("includeArchived=true", felogan);
         Assert.Contains("<th>Profit</th><th>Cook</th><th>Paid cook</th><th>Note</th><th>Edit</th><th>Delete</th>", felogan);

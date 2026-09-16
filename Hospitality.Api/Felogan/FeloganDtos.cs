@@ -25,6 +25,11 @@ public sealed record MenuItemDto(
     decimal Cost,
     int OpeningPacks,
     int RemainingPacks,
+    decimal Profit,
+    decimal Sham,
+    decimal Cook,
+    decimal Nf,
+    decimal House,
     DateTimeOffset? ArchivedAt);
 
 public sealed record MenuItemListDto(IReadOnlyList<MenuItemDto> Items);

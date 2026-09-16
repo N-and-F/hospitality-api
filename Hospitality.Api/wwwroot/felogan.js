@@ -245,7 +245,7 @@
   function catalogItemHtml(type, item) {
     const archived = Boolean(item.archivedAt);
     const details = type === "menu-items"
-      ? `<small>${escapeHtml(item.kind)} · Sell ${peso(item.sellPrice)} · Cost ${peso(item.cost)} · ${item.remainingPacks} left</small>`
+      ? `<small>${escapeHtml(item.kind)} · Sell ${peso(item.sellPrice)} · Cost ${peso(item.cost)} · Profit ${peso(item.profit)} · Cook 40% ${peso(item.cook)} · ${item.remainingPacks} left</small>`
       : "";
     return `<div class="item ${archived ? "archived" : ""}">
       <b>${escapeHtml(item.name)}${archived ? " · Archived" : ""}</b>

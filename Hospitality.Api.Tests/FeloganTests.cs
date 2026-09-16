@@ -938,6 +938,59 @@ public sealed class FeloganTests
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/v1/felogan/purchases")).StatusCode);
     }
 
+    [Fact]
+    public async Task Menu_item_includes_unit_costing_split()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var menu = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items");
+        var tocilog = menu.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("name").GetString() == "Tocilog");
+        Assert.Equal(120.00m, tocilog.GetProperty("sellPrice").GetDecimal());
+        Assert.Equal(55.17m, tocilog.GetProperty("cost").GetDecimal());
+        Assert.Equal(64.83m, tocilog.GetProperty("profit").GetDecimal());
+        Assert.Equal(6.48m, tocilog.GetProperty("sham").GetDecimal());
+        Assert.Equal(25.93m, tocilog.GetProperty("cook").GetDecimal());
+        Assert.Equal(32.42m, tocilog.GetProperty("nf").GetDecimal());
+        Assert.Equal(87.59m, tocilog.GetProperty("house").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Menu_cost_edit_does_not_change_existing_serving_split()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var cookShare = row.RootElement.GetProperty("totals").GetProperty("cook").GetDecimal();
+        var menuPut = await client.PutAsJsonAsync($"/v1/felogan/menu-items/{tocilogId}", new
+        {
+            name = "Tocilog",
+            kind = "plate",
+            sellPrice = 120m,
+            cost = 60m
+        });
+        menuPut.EnsureSuccessStatusCode();
+        using var updatedMenu = JsonDocument.Parse(await menuPut.Content.ReadAsStringAsync());
+        Assert.Equal(60.00m, updatedMenu.RootElement.GetProperty("profit").GetDecimal());
+        var listed = await client.GetFromJsonAsync<JsonElement>(
+            "/v1/felogan/servings?date=2026-09-06");
+        Assert.Equal(
+            cookShare,
+            listed.GetProperty("items")[0].GetProperty("totals").GetProperty("cook").GetDecimal());
+    }
+
     private static async Task<(Guid RoomId, Guid CookId, Guid TocilogId)> ServingIdsAsync(
         HttpClient client)
     {

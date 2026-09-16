@@ -1021,8 +1021,35 @@ public sealed class FeloganService(AppDbContext db)
     private static CatalogItemDto ToDto(FeloganCook cook) =>
         new(cook.Id, cook.Name, cook.ArchivedAt);
 
-    private static MenuItemDto ToDto(FeloganMenuItem item, int remainingPacks) =>
-        new(item.Id, item.Name, item.Kind, item.SellPrice, item.Cost, item.OpeningPacks, remainingPacks, item.ArchivedAt);
+    private static MenuItemDto ToDto(FeloganMenuItem item, int remainingPacks)
+    {
+        var (profit, sham, cook, nf, house) = ItemSplit(item.SellPrice, item.Cost);
+        return new(
+            item.Id,
+            item.Name,
+            item.Kind,
+            item.SellPrice,
+            item.Cost,
+            item.OpeningPacks,
+            remainingPacks,
+            profit,
+            sham,
+            cook,
+            nf,
+            house,
+            item.ArchivedAt);
+    }
+
+    private static (decimal Profit, decimal Sham, decimal Cook, decimal Nf, decimal House) ItemSplit(
+        decimal sell,
+        decimal cost)
+    {
+        var profit = decimal.Round(sell - cost, 2, MidpointRounding.AwayFromZero);
+        var cook = decimal.Round(profit * 0.40m, 2, MidpointRounding.AwayFromZero);
+        var sham = decimal.Round(profit * 0.10m, 2, MidpointRounding.AwayFromZero);
+        var nf = profit - cook - sham;
+        return (profit, sham, cook, nf, nf + cost);
+    }
 
     private async Task<MenuItemDto> ToDtoAsync(FeloganMenuItem item, CancellationToken cancellationToken)
     {
@@ -1109,11 +1136,8 @@ public sealed class FeloganService(AppDbContext db)
     {
         var sell = lines.Sum(line => line.Qty * line.SnapshotSellPrice);
         var cost = decimal.Round(lines.Sum(line => line.Qty * line.SnapshotCost), 2, MidpointRounding.AwayFromZero);
-        var profit = decimal.Round(sell - cost, 2, MidpointRounding.AwayFromZero);
-        var cook = decimal.Round(profit * 0.40m, 2, MidpointRounding.AwayFromZero);
-        var sham = decimal.Round(profit * 0.10m, 2, MidpointRounding.AwayFromZero);
-        var nf = profit - cook - sham;
-        return (cost, profit, sham, cook, nf, nf + cost);
+        var (profit, sham, cook, nf, house) = ItemSplit(sell, cost);
+        return (cost, profit, sham, cook, nf, house);
     }
 
     private static SettlementRead ReadSettlement(
