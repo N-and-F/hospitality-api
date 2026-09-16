@@ -66,6 +66,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.HasIndex(x => x.ServedOn);
             entity.Property(x => x.ServedOn).HasColumnType("date");
             entity.Property(x => x.Note).HasMaxLength(200);
+            entity.Property(x => x.AdditionalProfit).HasPrecision(18, 2);
+            entity.Property(x => x.ExcessPaid).HasPrecision(18, 2);
+            entity.Property(x => x.PaidCook).HasMaxLength(8);
+            entity.Property(x => x.PaidSham).HasMaxLength(8);
             entity.HasOne(x => x.Room)
                 .WithMany()
                 .HasForeignKey(x => x.RoomId)

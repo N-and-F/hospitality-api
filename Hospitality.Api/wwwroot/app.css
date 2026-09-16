@@ -657,6 +657,36 @@ button.ghost {
   gap: 0 0.75rem;
 }
 
+.settlement-readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: 0.65rem;
+  margin: 0.85rem 0 1rem;
+  padding: 0.75rem 0.85rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+}
+
+.settlement-readout div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.settlement-readout span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settlement-readout strong {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .menu-quantity-fields fieldset {
   margin: 1rem 0;
   padding: 0;

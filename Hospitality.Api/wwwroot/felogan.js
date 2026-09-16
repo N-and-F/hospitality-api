@@ -55,10 +55,54 @@
         <div class="quantity-grid">${items.map((item) => `
           <label>${escapeHtml(item.name)}
             <span>${peso(item.sellPrice)}</span>
-            <input type="number" min="0" step="1" value="0" data-menu-qty="${item.id}">
+            <input type="number" min="0" step="1" value="0" data-menu-qty="${item.id}" data-sell="${item.sellPrice}" data-cost="${item.cost ?? 0}">
           </label>`).join("")}</div>
       </fieldset>`;
     }).join("");
+    updateSettlement();
+  }
+
+  function roundMoney(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function clientSettlement() {
+    const lines = [...document.querySelectorAll("[data-menu-qty]")].map((input) => ({
+      qty: Number(input.value) || 0,
+      sellPrice: Number(input.dataset.sell) || 0,
+      cost: Number(input.dataset.cost) || 0
+    }));
+    const qty = lines.reduce((sum, line) => sum + line.qty, 0);
+    const sell = roundMoney(lines.reduce((sum, line) => sum + line.qty * line.sellPrice, 0));
+    const cost = roundMoney(lines.reduce((sum, line) => sum + line.qty * line.cost, 0));
+    const profit = roundMoney(sell - cost);
+    const cook = roundMoney(profit * 0.4);
+    const sham = roundMoney(profit * 0.1);
+    const nf = roundMoney(profit - cook - sham);
+    return { qty, sell, cost, profit, sham, cook, nf, house: roundMoney(nf + cost) };
+  }
+
+  function renderSettlement(totals = clientSettlement()) {
+    const element = document.getElementById("felogan-settlement");
+    if (!totals || !totals.qty) {
+      element.hidden = true;
+      element.innerHTML = "";
+      return;
+    }
+    element.hidden = false;
+    element.innerHTML = [
+      ["Sell", totals.sell],
+      ["Cost", totals.cost],
+      ["Profit", totals.profit],
+      ["Sham", totals.sham],
+      ["Cook", totals.cook],
+      ["N&F", totals.nf],
+      ["House", totals.house]
+    ].map(([label, value]) => `<div><span>${label}</span><strong>${peso(value)}</strong></div>`).join("");
+  }
+
+  function updateSettlement(totals) {
+    renderSettlement(totals);
   }
 
   async function loadServingCatalogs() {
@@ -110,16 +154,21 @@
     summary.innerHTML = `
       <div><span>Servings</span><strong>${data.totals.count}</strong></div>
       <div><span>Items</span><strong>${data.totals.qty}</strong></div>
-      <div><span>Sell</span><strong>${peso(data.totals.sell)}</strong></div>`;
+      <div><span>Sell</span><strong>${peso(data.totals.sell)}</strong></div>
+      <div><span>Profit</span><strong>${peso(data.totals.profit)}</strong></div>
+      <div><span>Cook</span><strong>${peso(data.totals.cook)}</strong></div>`;
     document.getElementById("felogan-history-list").innerHTML = servings.length
       ? `<table class="history-table">
-          <thead><tr><th>Date</th><th>Room</th><th>Cook</th><th>Summary</th><th>Sell</th><th>Note</th><th>Edit</th><th>Delete</th></tr></thead>
+          <thead><tr><th>Date</th><th>Room</th><th>Cook</th><th>Summary</th><th>Sell</th><th>Profit</th><th>Cook</th><th>Paid cook</th><th>Note</th><th>Edit</th><th>Delete</th></tr></thead>
           <tbody>${servings.map((serving) => `<tr>
             <td data-label="Date">${escapeHtml(serving.servedOn)}</td>
             <td data-label="Room">${escapeHtml(serving.room.name)}</td>
             <td data-label="Cook">${escapeHtml(serving.cook.name)}</td>
             <td data-label="Summary">${servingSummary(serving.lines)}</td>
             <td data-label="Sell" class="num">${peso(serving.totals.sell)}</td>
+            <td data-label="Profit" class="num">${peso(serving.totals.profit)}</td>
+            <td data-label="Cook share" class="num">${peso(serving.totals.cook)}</td>
+            <td data-label="Paid cook">${escapeHtml(serving.paidCook)}</td>
             <td data-label="Note">${serving.note ? `<button type="button" class="text-link" data-serving-note="${serving.id}">View</button>` : "—"}</td>
             <td data-label="Edit"><button type="button" class="text-link" data-serving-edit="${serving.id}">Edit</button></td>
             <td data-label="Delete"><button type="button" class="text-link danger" data-serving-delete="${serving.id}">Delete</button></td>
@@ -145,17 +194,23 @@
       id: item.menuItemId,
       name: item.name,
       kind: item.kind,
-      sellPrice: item.sellPrice
+      sellPrice: item.sellPrice,
+      cost: item.cost
     })));
     ensureOption(document.getElementById("felogan-room"), serving.room);
     ensureOption(document.getElementById("felogan-cook"), serving.cook);
     document.getElementById("felogan-note").value = serving.note || "";
+    document.getElementById("felogan-additional-profit").value = serving.additionalProfit ?? 0;
+    document.getElementById("felogan-excess-paid").value = serving.excessPaid ?? 0;
+    document.getElementById("felogan-paid-cook").value = serving.paidCook || "no";
+    document.getElementById("felogan-paid-sham").value = serving.paidSham || "na";
     serving.lines.forEach((item) => {
       const input = document.querySelector(`[data-menu-qty="${item.menuItemId}"]`);
       if (input) {
         input.value = item.qty;
       }
     });
+    updateSettlement(serving.totals);
     showPanel("serving");
   }
 
@@ -168,6 +223,7 @@
     document.getElementById("felogan-serving-date").value = manilaDate();
     renderServingFields();
     showError(servingError, "");
+    updateSettlement();
   }
 
   function catalogConfig(type) {
@@ -250,6 +306,8 @@
     await refreshCatalogs();
   }
 
+  form.addEventListener("input", () => updateSettlement());
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submit = document.getElementById("felogan-serving-save");
@@ -266,16 +324,21 @@
       roomId: document.getElementById("felogan-room").value,
       cookId: document.getElementById("felogan-cook").value,
       note: document.getElementById("felogan-note").value.trim(),
+      additionalProfit: Number(document.getElementById("felogan-additional-profit").value || 0),
+      excessPaid: Number(document.getElementById("felogan-excess-paid").value || 0),
+      paidCook: document.getElementById("felogan-paid-cook").value,
+      paidSham: document.getElementById("felogan-paid-sham").value,
       lines
     };
     if (!editingServingId) {
       body.clientRequestId = crypto.randomUUID();
     }
     try {
-      await api(`/v1/felogan/servings${editingServingId ? `/${editingServingId}` : ""}`, {
+      const saved = await api(`/v1/felogan/servings${editingServingId ? `/${editingServingId}` : ""}`, {
         method: editingServingId ? "PUT" : "POST",
         body: JSON.stringify(body)
       });
+      updateSettlement(saved.totals);
       resetServingForm();
       if (!document.getElementById("felogan-history").hidden) {
         await refreshHistory();

@@ -7,6 +7,10 @@ public sealed class FeloganServing
     public Guid RoomId { get; set; }
     public Guid CookId { get; set; }
     public string? Note { get; set; }
+    public decimal AdditionalProfit { get; set; }
+    public decimal ExcessPaid { get; set; }
+    public string PaidCook { get; set; } = "no";
+    public string PaidSham { get; set; } = "na";
     public required string CreatedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid ClientRequestId { get; set; }

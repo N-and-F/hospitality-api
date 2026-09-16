@@ -491,6 +491,18 @@ public sealed class FeloganService(AppDbContext db)
             return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
         }
 
+        var settlement = ReadSettlement(
+            request.AdditionalProfit,
+            request.ExcessPaid,
+            request.PaidCook,
+            request.PaidSham,
+            "no",
+            "na");
+        if (settlement.Failure is not null)
+        {
+            return (settlement.Failure.Status, settlement.Failure.Code, settlement.Failure.Message, null);
+        }
+
         var requestedLines = request.Lines?.Where(line => line.Qty != 0).ToArray() ?? [];
         if (requestedLines.Length == 0)
         {
@@ -540,6 +552,10 @@ public sealed class FeloganService(AppDbContext db)
             RoomId = room.Id,
             CookId = cook.Id,
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
+            AdditionalProfit = settlement.AdditionalProfit,
+            ExcessPaid = settlement.ExcessPaid,
+            PaidCook = settlement.PaidCook,
+            PaidSham = settlement.PaidSham,
             CreatedByUserId = userId,
             CreatedAt = DateTimeOffset.UtcNow,
             ClientRequestId = request.ClientRequestId.Value,
@@ -607,6 +623,18 @@ public sealed class FeloganService(AppDbContext db)
             return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
         }
 
+        var settlement = ReadSettlement(
+            request.AdditionalProfit,
+            request.ExcessPaid,
+            request.PaidCook,
+            request.PaidSham,
+            serving.PaidCook,
+            serving.PaidSham);
+        if (settlement.Failure is not null)
+        {
+            return (settlement.Failure.Status, settlement.Failure.Code, settlement.Failure.Message, null);
+        }
+
         var requestedLines = request.Lines?.Where(line => line.Qty != 0).ToArray() ?? [];
         if (requestedLines.Length == 0)
         {
@@ -665,6 +693,10 @@ public sealed class FeloganService(AppDbContext db)
         serving.Room = room;
         serving.Cook = cook;
         serving.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        serving.AdditionalProfit = settlement.AdditionalProfit;
+        serving.ExcessPaid = settlement.ExcessPaid;
+        serving.PaidCook = settlement.PaidCook;
+        serving.PaidSham = settlement.PaidSham;
 
         var availableExistingLines = existingLines
             .GroupBy(line => line.MenuItemId)
@@ -757,7 +789,13 @@ public sealed class FeloganService(AppDbContext db)
             new ServingListTotalsDto(
                 items.Length,
                 items.Sum(item => item.Totals.Qty),
-                items.Sum(item => item.Totals.Sell))));
+                items.Sum(item => item.Totals.Sell),
+                items.Sum(item => item.Totals.Cost),
+                items.Sum(item => item.Totals.Profit),
+                items.Sum(item => item.Totals.Sham),
+                items.Sum(item => item.Totals.Cook),
+                items.Sum(item => item.Totals.Nf),
+                items.Sum(item => item.Totals.House))));
     }
 
     private static CatalogFailure? ValidateName(string? requestedName, out string name)
@@ -870,6 +908,7 @@ public sealed class FeloganService(AppDbContext db)
             line.SnapshotSellPrice,
             line.SnapshotCost,
             line.Qty * line.SnapshotSellPrice)).ToArray();
+        var (cost, profit, sham, cook, nf, house) = SettlementFrom(serving.Lines);
         return new ServingDto(
             serving.Id,
             serving.ServedOn,
@@ -879,10 +918,90 @@ public sealed class FeloganService(AppDbContext db)
             lines,
             new ServingTotalsDto(
                 lines.Sum(line => line.Qty),
-                lines.Sum(line => line.SellTotal)),
+                lines.Sum(line => line.SellTotal),
+                cost,
+                profit,
+                sham,
+                cook,
+                nf,
+                house),
+            serving.AdditionalProfit,
+            serving.ExcessPaid,
+            serving.PaidCook,
+            serving.PaidSham,
             serving.CreatedAt,
             serving.ClientRequestId);
     }
+
+    private static (decimal Cost, decimal Profit, decimal Sham, decimal Cook, decimal Nf, decimal House) SettlementFrom(
+        IEnumerable<FeloganServingLine> lines)
+    {
+        var sell = lines.Sum(line => line.Qty * line.SnapshotSellPrice);
+        var cost = decimal.Round(lines.Sum(line => line.Qty * line.SnapshotCost), 2, MidpointRounding.AwayFromZero);
+        var profit = decimal.Round(sell - cost, 2, MidpointRounding.AwayFromZero);
+        var cook = decimal.Round(profit * 0.40m, 2, MidpointRounding.AwayFromZero);
+        var sham = decimal.Round(profit * 0.10m, 2, MidpointRounding.AwayFromZero);
+        var nf = profit - cook - sham;
+        return (cost, profit, sham, cook, nf, nf + cost);
+    }
+
+    private static SettlementRead ReadSettlement(
+        decimal additionalProfit,
+        decimal excessPaid,
+        string? paidCook,
+        string? paidSham,
+        string defaultPaidCook,
+        string defaultPaidSham)
+    {
+        if (additionalProfit < 0
+            || excessPaid < 0
+            || HasExtraDecimals(additionalProfit)
+            || HasExtraDecimals(excessPaid))
+        {
+            return new SettlementRead(
+                new CatalogFailure(
+                    400,
+                    "VALIDATION_ERROR",
+                    "Additional profit and excess paid must be non-negative with at most 2 decimal places."),
+                0,
+                0,
+                defaultPaidCook,
+                defaultPaidSham);
+        }
+
+        if (paidCook is { Length: > 0 } && !IsPaidFlag(paidCook))
+        {
+            return new SettlementRead(
+                new CatalogFailure(400, "VALIDATION_ERROR", "Paid cook must be yes, na, or no."),
+                additionalProfit,
+                excessPaid,
+                defaultPaidCook,
+                defaultPaidSham);
+        }
+
+        if (paidSham is { Length: > 0 } && !IsPaidFlag(paidSham))
+        {
+            return new SettlementRead(
+                new CatalogFailure(400, "VALIDATION_ERROR", "Paid sham must be yes, na, or no."),
+                additionalProfit,
+                excessPaid,
+                defaultPaidCook,
+                defaultPaidSham);
+        }
+
+        return new SettlementRead(
+            null,
+            additionalProfit,
+            excessPaid,
+            PaidOrDefault(paidCook, defaultPaidCook),
+            PaidOrDefault(paidSham, defaultPaidSham));
+    }
+
+    private static bool IsPaidFlag(string value) =>
+        value.Trim().ToLowerInvariant() is "yes" or "na" or "no";
+
+    private static string PaidOrDefault(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim().ToLowerInvariant();
 
     private static DateOnly ManilaToday()
     {
@@ -915,4 +1034,11 @@ public sealed class FeloganService(AppDbContext db)
     }
 
     private sealed record CatalogFailure(int Status, string Code, string Message);
+
+    private sealed record SettlementRead(
+        CatalogFailure? Failure,
+        decimal AdditionalProfit,
+        decimal ExcessPaid,
+        string PaidCook,
+        string PaidSham);
 }

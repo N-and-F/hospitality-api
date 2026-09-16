@@ -765,6 +765,94 @@ public sealed class FeloganTests
         Assert.Equal("MENU_ITEM_NOT_FOUND", await ReadErrorCode(updated));
     }
 
+    [Fact]
+    public async Task Admin_serving_totals_include_v1_profit_split()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var totals = row.RootElement.GetProperty("totals");
+        Assert.Equal(240.00m, totals.GetProperty("sell").GetDecimal());
+        Assert.Equal(110.34m, totals.GetProperty("cost").GetDecimal());
+        Assert.Equal(129.66m, totals.GetProperty("profit").GetDecimal());
+        Assert.Equal(12.97m, totals.GetProperty("sham").GetDecimal());
+        Assert.Equal(51.86m, totals.GetProperty("cook").GetDecimal());
+        Assert.Equal(64.83m, totals.GetProperty("nf").GetDecimal());
+        Assert.Equal(175.17m, totals.GetProperty("house").GetDecimal());
+        Assert.Equal("no", row.RootElement.GetProperty("paidCook").GetString());
+        Assert.Equal("na", row.RootElement.GetProperty("paidSham").GetString());
+    }
+
+    [Fact]
+    public async Task Additional_profit_does_not_change_cook_share()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            additionalProfit = 23m,
+            excessPaid = 20m,
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        Assert.Equal(51.86m, row.RootElement.GetProperty("totals").GetProperty("cook").GetDecimal());
+        Assert.Equal(23.00m, row.RootElement.GetProperty("additionalProfit").GetDecimal());
+        Assert.Equal(20.00m, row.RootElement.GetProperty("excessPaid").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Paid_cook_persists_and_rejects_unknown_value()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+            paidCook = "yes",
+            paidSham = "yes",
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = row.RootElement.GetProperty("id").GetGuid();
+        Assert.Equal("yes", row.RootElement.GetProperty("paidCook").GetString());
+
+        var bad = await client.PutAsJsonAsync($"/v1/felogan/servings/{id}", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
+            paidCook = "maybe"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(bad));
+    }
+
     private static async Task<(Guid RoomId, Guid CookId, Guid TocilogId)> ServingIdsAsync(
         HttpClient client)
     {

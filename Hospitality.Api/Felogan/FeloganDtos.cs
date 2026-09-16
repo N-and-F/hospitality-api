@@ -40,6 +40,10 @@ public sealed class CreateServingRequest
     public Guid CookId { get; set; }
     public string? Note { get; set; }
     public IReadOnlyList<ServingLineRequest> Lines { get; set; } = [];
+    public decimal AdditionalProfit { get; set; }
+    public decimal ExcessPaid { get; set; }
+    public string? PaidCook { get; set; }
+    public string? PaidSham { get; set; }
     public Guid? ClientRequestId { get; set; }
 }
 
@@ -50,6 +54,10 @@ public sealed class UpdateServingRequest
     public Guid CookId { get; set; }
     public string? Note { get; set; }
     public IReadOnlyList<ServingLineRequest> Lines { get; set; } = [];
+    public decimal AdditionalProfit { get; set; }
+    public decimal ExcessPaid { get; set; }
+    public string? PaidCook { get; set; }
+    public string? PaidSham { get; set; }
 }
 
 public sealed record ServingCatalogItemDto(Guid Id, string Name);
@@ -63,7 +71,15 @@ public sealed record ServingLineDto(
     decimal Cost,
     decimal SellTotal);
 
-public sealed record ServingTotalsDto(int Qty, decimal Sell);
+public sealed record ServingTotalsDto(
+    int Qty,
+    decimal Sell,
+    decimal Cost,
+    decimal Profit,
+    decimal Sham,
+    decimal Cook,
+    decimal Nf,
+    decimal House);
 
 public sealed record ServingDto(
     Guid Id,
@@ -73,10 +89,23 @@ public sealed record ServingDto(
     string? Note,
     IReadOnlyList<ServingLineDto> Lines,
     ServingTotalsDto Totals,
+    decimal AdditionalProfit,
+    decimal ExcessPaid,
+    string PaidCook,
+    string PaidSham,
     DateTimeOffset CreatedAt,
     Guid ClientRequestId);
 
-public sealed record ServingListTotalsDto(int Count, int Qty, decimal Sell);
+public sealed record ServingListTotalsDto(
+    int Count,
+    int Qty,
+    decimal Sell,
+    decimal Cost,
+    decimal Profit,
+    decimal Sham,
+    decimal Cook,
+    decimal Nf,
+    decimal House);
 
 public sealed record ServingListDto(
     DateOnly Date,
