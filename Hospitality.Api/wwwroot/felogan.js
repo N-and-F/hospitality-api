@@ -13,8 +13,10 @@
   let servings = [];
   let purchases = [];
   let historyRange = "day";
-  let purchaseRange = "day";
   let editingServingId = null;
+  let editingExtras = null;
+  let cookPercent = 40;
+  let catalogType = "";
   const editingCatalog = { rooms: null, cooks: null, "menu-items": null };
 
   function manilaDate() {
@@ -24,6 +26,10 @@
   function showError(element, message) {
     element.hidden = !message;
     element.textContent = message || "";
+  }
+
+  function showToast(message, kind) {
+    window.hospitalityToast(message, kind);
   }
 
   function option(item) {
@@ -45,67 +51,52 @@
     });
     const allItems = [...itemsById.values()].filter((item) => item.kind === "plate" || item.kind === "extra");
     const groups = [
-      ["plate", "Plates"],
+      ["plate", "Silog"],
       ["extra", "Extras"]
     ];
-    document.getElementById("felogan-menu-fields").innerHTML = groups.map(([kind, label]) => {
+    const fields = document.getElementById("felogan-menu-fields");
+    const note = document.getElementById("felogan-serving-note");
+    if (note && fields.contains(note)) {
+      fields.after(note);
+    }
+    fields.innerHTML = groups.map(([kind, label]) => {
       const items = allItems.filter((item) => item.kind === kind);
       if (!items.length) {
         return "";
       }
-      return `<fieldset>
+      return `<fieldset data-serving-group="${kind}">
         <legend>${label}</legend>
-        <div class="quantity-grid">${items.map((item) => `
-          <label>${escapeHtml(item.name)}
-            <span>${peso(item.sellPrice)}${Number.isInteger(item.remainingPacks) ? ` · ${item.remainingPacks} left` : ""}</span>
-            <input type="number" min="0" step="1" value="0" data-menu-qty="${item.id}" data-sell="${item.sellPrice}" data-cost="${item.cost ?? 0}">
-          </label>`).join("")}</div>
+        <div class="serving-lines">${items.map((item) => `
+          <div class="serving-line">
+            <span class="serving-line-name">${escapeHtml(item.name)}</span>
+            <div class="stepper">
+              <button type="button" data-step="-1" aria-label="Decrease ${escapeHtml(item.name)}">−</button>
+              <input type="number" min="0" step="1" value="0" inputmode="numeric" data-menu-qty="${item.id}" data-sell="${item.sellPrice}" data-cost="${item.cost ?? 0}" aria-label="${escapeHtml(item.name)} quantity">
+              <button type="button" data-step="1" aria-label="Increase ${escapeHtml(item.name)}">+</button>
+            </div>
+          </div>`).join("")}</div>
       </fieldset>`;
     }).join("");
-    updateSettlement();
+    const plates = document.querySelector("[data-serving-group='plate']");
+    if (plates && note) {
+      plates.appendChild(note);
+    }
+    updateTotal();
   }
 
   function roundMoney(value) {
     return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
   }
 
-  function clientSettlement() {
-    const lines = [...document.querySelectorAll("[data-menu-qty]")].map((input) => ({
-      qty: Number(input.value) || 0,
-      sellPrice: Number(input.dataset.sell) || 0,
-      cost: Number(input.dataset.cost) || 0
-    }));
-    const qty = lines.reduce((sum, line) => sum + line.qty, 0);
-    const sell = roundMoney(lines.reduce((sum, line) => sum + line.qty * line.sellPrice, 0));
-    const cost = roundMoney(lines.reduce((sum, line) => sum + line.qty * line.cost, 0));
-    const profit = roundMoney(sell - cost);
-    const cook = roundMoney(profit * 0.4);
-    const sham = roundMoney(profit * 0.1);
-    const nf = roundMoney(profit - cook - sham);
-    return { qty, sell, cost, profit, sham, cook, nf, house: roundMoney(nf + cost) };
+  function servingSellTotal() {
+    return roundMoney([...document.querySelectorAll("[data-menu-qty]")].reduce(
+      (sum, input) => sum + (Number(input.value) || 0) * (Number(input.dataset.sell) || 0),
+      0
+    ));
   }
 
-  function renderSettlement(totals = clientSettlement()) {
-    const element = document.getElementById("felogan-settlement");
-    if (!totals || !totals.qty) {
-      element.hidden = true;
-      element.innerHTML = "";
-      return;
-    }
-    element.hidden = false;
-    element.innerHTML = [
-      ["Sell", totals.sell],
-      ["Cost", totals.cost],
-      ["Profit", totals.profit],
-      ["Sham", totals.sham],
-      ["Cook", totals.cook],
-      ["N&F", totals.nf],
-      ["House", totals.house]
-    ].map(([label, value]) => `<div><span>${label}</span><strong>${peso(value)}</strong></div>`).join("");
-  }
-
-  function updateSettlement(totals) {
-    renderSettlement(totals);
+  function updateTotal() {
+    document.getElementById("felogan-serving-total").textContent = peso(servingSellTotal());
   }
 
   async function loadServingCatalogs() {
@@ -131,11 +122,47 @@
       refreshHistory().catch((error) => showHistoryError(error.message));
     }
     if (name === "catalog") {
-      refreshCatalogs().catch((error) => showError(document.getElementById("felogan-menu-error"), error.message));
+      showCatalogSection("");
+      refreshCatalogs().catch((error) => showError(document.getElementById("felogan-settings-error"), error.message));
     }
     if (name === "stock") {
       refreshStock().catch((error) => showError(document.getElementById("felogan-purchase-error"), error.message));
     }
+  }
+
+  function servingUpdateBody(serving, extras = {}) {
+    return {
+      servedOn: serving.servedOn,
+      roomId: serving.room.id,
+      cookId: serving.cook.id,
+      note: serving.note || "",
+      lines: serving.lines.map((item) => ({ menuItemId: item.menuItemId, qty: item.qty })),
+      additionalProfit: serving.additionalProfit ?? 0,
+      excessPaid: serving.excessPaid ?? 0,
+      paidCook: serving.paidCook || "no",
+      ...extras
+    };
+  }
+
+  function paidFlagLabel(value) {
+    return value === "na" ? "N/A" : value;
+  }
+
+  function paidCookCellHtml(serving) {
+    return `<span class="paid-cook-cell">
+      <span>${escapeHtml(paidFlagLabel(serving.paidCook))}</span>
+      <button type="button" class="icon-btn" data-paid-cook-edit="${serving.id}" aria-label="Edit paid cook">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19l1.4-4.5L16.6 4.3a1.5 1.5 0 0 1 2.1 0l1 1a1.5 1.5 0 0 1 0 2.1L9.5 17.6 5 19Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 6.2 17.8 10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </span>`;
+  }
+
+  function startPaidCookEdit(cell, serving) {
+    const current = serving.paidCook || "no";
+    cell.innerHTML = `<select data-paid-cook="${serving.id}" aria-label="Paid cook">${
+      ["yes", "na", "no"].map((value) => `<option value="${value}"${value === current ? " selected" : ""}>${paidFlagLabel(value)}</option>`).join("")
+    }</select>`;
+    cell.querySelector("select").focus();
   }
 
   function servingSummary(lines) {
@@ -174,7 +201,7 @@
             <td data-label="Sell" class="num">${peso(serving.totals.sell)}</td>
             <td data-label="Profit" class="num">${peso(serving.totals.profit)}</td>
             <td data-label="Cook share" class="num">${peso(serving.totals.cook)}</td>
-            <td data-label="Paid cook">${escapeHtml(serving.paidCook)}</td>
+            <td data-label="Paid cook">${paidCookCellHtml(serving)}</td>
             <td data-label="Note">${serving.note ? `<button type="button" class="text-link" data-serving-note="${serving.id}">View</button>` : "—"}</td>
             <td data-label="Edit"><button type="button" class="text-link" data-serving-edit="${serving.id}">Edit</button></td>
             <td data-label="Delete"><button type="button" class="text-link danger" data-serving-delete="${serving.id}">Delete</button></td>
@@ -206,22 +233,25 @@
     ensureOption(document.getElementById("felogan-room"), serving.room);
     ensureOption(document.getElementById("felogan-cook"), serving.cook);
     document.getElementById("felogan-note").value = serving.note || "";
-    document.getElementById("felogan-additional-profit").value = serving.additionalProfit ?? 0;
-    document.getElementById("felogan-excess-paid").value = serving.excessPaid ?? 0;
-    document.getElementById("felogan-paid-cook").value = serving.paidCook || "no";
-    document.getElementById("felogan-paid-sham").value = serving.paidSham || "na";
+    editingExtras = {
+      additionalProfit: serving.additionalProfit ?? 0,
+      excessPaid: serving.excessPaid ?? 0,
+      paidCook: serving.paidCook || "no"
+    };
     serving.lines.forEach((item) => {
       const input = document.querySelector(`[data-menu-qty="${item.menuItemId}"]`);
       if (input) {
         input.value = item.qty;
       }
     });
-    updateSettlement(serving.totals);
+    updateTotal();
+    showError(servingError, "");
     showPanel("serving");
   }
 
   function resetServingForm() {
     editingServingId = null;
+    editingExtras = null;
     form.reset();
     document.getElementById("felogan-serving-heading").textContent = "New serving";
     document.getElementById("felogan-serving-save").textContent = "Save serving";
@@ -229,7 +259,7 @@
     document.getElementById("felogan-serving-date").value = manilaDate();
     renderServingFields();
     showError(servingError, "");
-    updateSettlement();
+    updateTotal();
   }
 
   function catalogConfig(type) {
@@ -242,14 +272,17 @@
     return { form: "felogan-menu-form", name: "felogan-menu-name", list: "felogan-menu-list", error: "felogan-menu-error" };
   }
 
+  function kindLabel(kind) {
+    if (kind === "plate") return "Silog";
+    if (kind === "extra") return "Extra";
+    if (kind === "stock") return "Stock";
+    return kind || "";
+  }
+
   function catalogItemHtml(type, item) {
     const archived = Boolean(item.archivedAt);
-    const details = type === "menu-items"
-      ? `<small>${escapeHtml(item.kind)} · Sell ${peso(item.sellPrice)} · Cost ${peso(item.cost)} · Profit ${peso(item.profit)} · Cook 40% ${peso(item.cook)} · ${item.remainingPacks} left</small>`
-      : "";
     return `<div class="item ${archived ? "archived" : ""}">
       <b>${escapeHtml(item.name)}${archived ? " · Archived" : ""}</b>
-      ${details}
       <div class="item-actions">
         <button type="button" class="text-link" data-catalog-edit="${type}" data-id="${item.id}">Edit</button>
         <button type="button" class="text-link ${archived ? "" : "danger"}" data-catalog-toggle="${type}" data-id="${item.id}" data-archived="${archived}">
@@ -259,20 +292,67 @@
     </div>`;
   }
 
+  function menuTableHtml(items) {
+    if (!items.length) {
+      return `<p class="muted history-empty">No items.</p>`;
+    }
+    return `<table class="history-table">
+      <thead><tr><th>Name</th><th>Kind</th><th>Sell</th><th>Cost</th><th>Profit</th><th>Cook ${cookPercent}%</th><th>Left</th><th>Edit</th><th>Archive</th></tr></thead>
+      <tbody>${items.map((item) => {
+        const archived = Boolean(item.archivedAt);
+        return `<tr class="${archived ? "archived" : ""}">
+          <td data-label="Name">${escapeHtml(item.name)}${archived ? " · Archived" : ""}</td>
+          <td data-label="Kind">${escapeHtml(kindLabel(item.kind))}</td>
+          <td data-label="Sell" class="num">${peso(item.sellPrice)}</td>
+          <td data-label="Cost" class="num">${peso(item.cost)}</td>
+          <td data-label="Profit" class="num">${peso(item.profit)}</td>
+          <td data-label="Cook ${cookPercent}%" class="num">${peso(item.cook)}</td>
+          <td data-label="Left" class="num">${item.remainingPacks}</td>
+          <td data-label="Edit"><button type="button" class="text-link" data-catalog-edit="menu-items" data-id="${item.id}">Edit</button></td>
+          <td data-label="Archive" class="actions"><div class="item-actions">
+            <button type="button" class="text-link ${archived ? "" : "danger"}" data-catalog-toggle="menu-items" data-id="${item.id}" data-archived="${archived}">
+              ${archived ? "Unarchive" : "Archive"}
+            </button>
+          </div></td>
+        </tr>`;
+      }).join("")}</tbody>
+    </table>`;
+  }
+
   async function refreshCatalogs() {
-    const [roomList, cookList, menuList] = await Promise.all([
+    const [roomList, cookList, menuList, settings] = await Promise.all([
       api("/v1/felogan/rooms?includeArchived=true"),
       api("/v1/felogan/cooks?includeArchived=true"),
-      api("/v1/felogan/menu-items?includeArchived=true")
+      api("/v1/felogan/menu-items?includeArchived=true"),
+      api("/v1/felogan/settings")
     ]);
+    cookPercent = settings.cookPercent;
+    document.getElementById("felogan-cook-percent").value = cookPercent;
     const catalogs = { rooms: roomList.items || [], cooks: cookList.items || [], "menu-items": menuList.items || [] };
     Object.entries(catalogs).forEach(([type, items]) => {
-      document.getElementById(catalogConfig(type).list).innerHTML = items.map((item) => catalogItemHtml(type, item)).join("");
+      document.getElementById(catalogConfig(type).list).innerHTML = type === "menu-items"
+        ? menuTableHtml(items)
+        : items.map((item) => catalogItemHtml(type, item)).join("");
     });
     await loadServingCatalogs();
   }
 
+  function showCatalogSection(type) {
+    if (catalogType && catalogType !== type) {
+      resetCatalogForm(catalogType);
+    }
+    catalogType = type || "";
+    const menu = document.querySelector("[data-felogan-settings-menu]");
+    menu.hidden = Boolean(catalogType);
+    document.querySelectorAll("[data-catalog-section]").forEach((section) => {
+      section.hidden = section.dataset.catalogSection !== catalogType;
+    });
+  }
+
   function resetCatalogForm(type) {
+    if (!type) {
+      return;
+    }
     const config = catalogConfig(type);
     document.getElementById(config.form).reset();
     editingCatalog[type] = null;
@@ -280,6 +360,9 @@
     submit.textContent = type === "menu-items" ? "Add menu item" : `Add ${type === "rooms" ? "room" : "cook"}`;
     document.querySelector(`[data-catalog-cancel="${type}"]`).hidden = true;
     showError(document.getElementById(config.error), "");
+    if (type === "menu-items") {
+      document.querySelector("#felogan-menu-kind option[value=\"stock\"]")?.remove();
+    }
   }
 
   function startCatalogEdit(type, item) {
@@ -287,7 +370,11 @@
     editingCatalog[type] = item.id;
     document.getElementById(config.name).value = item.name;
     if (type === "menu-items") {
-      document.getElementById("felogan-menu-kind").value = item.kind;
+      const kind = document.getElementById("felogan-menu-kind");
+      if (item.kind === "stock" && !kind.querySelector("option[value=\"stock\"]")) {
+        kind.insertAdjacentHTML("beforeend", "<option value=\"stock\">Stock</option>");
+      }
+      kind.value = item.kind;
       document.getElementById("felogan-menu-sell").value = item.sellPrice;
       document.getElementById("felogan-menu-cost").value = item.cost;
     }
@@ -310,9 +397,24 @@
     });
     resetCatalogForm(type);
     await refreshCatalogs();
+    const labels = { rooms: "Room", cooks: "Cook", "menu-items": "Menu item" };
+    showToast(id ? `${labels[type]} updated.` : `${labels[type]} saved.`);
   }
 
-  form.addEventListener("input", () => updateSettlement());
+  form.addEventListener("input", () => updateTotal());
+
+  document.getElementById("felogan-menu-fields").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-step]");
+    if (!button) {
+      return;
+    }
+    const input = button.parentElement.querySelector("[data-menu-qty]");
+    if (!input) {
+      return;
+    }
+    input.value = Math.max(0, (Number(input.value) || 0) + Number(button.dataset.step));
+    updateTotal();
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -330,27 +432,28 @@
       roomId: document.getElementById("felogan-room").value,
       cookId: document.getElementById("felogan-cook").value,
       note: document.getElementById("felogan-note").value.trim(),
-      additionalProfit: Number(document.getElementById("felogan-additional-profit").value || 0),
-      excessPaid: Number(document.getElementById("felogan-excess-paid").value || 0),
-      paidCook: document.getElementById("felogan-paid-cook").value,
-      paidSham: document.getElementById("felogan-paid-sham").value,
       lines
     };
+    if (editingExtras) {
+      Object.assign(body, editingExtras);
+    }
     if (!editingServingId) {
       body.clientRequestId = crypto.randomUUID();
     }
     try {
-      const saved = await api(`/v1/felogan/servings${editingServingId ? `/${editingServingId}` : ""}`, {
+      const savedEdit = Boolean(editingServingId);
+      await api(`/v1/felogan/servings${editingServingId ? `/${editingServingId}` : ""}`, {
         method: editingServingId ? "PUT" : "POST",
         body: JSON.stringify(body)
       });
-      updateSettlement(saved.totals);
       resetServingForm();
+      showToast(savedEdit ? "Serving updated." : "Serving saved.");
       if (!document.getElementById("felogan-history").hidden) {
         await refreshHistory();
       }
     } catch (error) {
       showError(servingError, error.message);
+      showToast(error.message, "error");
     } finally {
       submit.disabled = false;
     }
@@ -370,6 +473,16 @@
     });
   });
 
+  document.querySelectorAll("[data-felogan-catalog]").forEach((button) => {
+    button.addEventListener("click", () => {
+      showCatalogSection(button.dataset.feloganCatalog);
+    });
+  });
+
+  document.querySelectorAll("[data-felogan-settings-back]").forEach((button) => {
+    button.addEventListener("click", () => showCatalogSection(""));
+  });
+
   document.querySelectorAll("[data-felogan-range]").forEach((button) => {
     button.addEventListener("click", () => {
       historyRange = button.dataset.feloganRange;
@@ -384,10 +497,16 @@
     const note = event.target.closest("[data-serving-note]");
     const edit = event.target.closest("[data-serving-edit]");
     const remove = event.target.closest("[data-serving-delete]");
-    const id = note?.dataset.servingNote || edit?.dataset.servingEdit || remove?.dataset.servingDelete;
+    const paidEdit = event.target.closest("[data-paid-cook-edit]");
+    const id = note?.dataset.servingNote
+      || edit?.dataset.servingEdit
+      || remove?.dataset.servingDelete
+      || paidEdit?.dataset.paidCookEdit;
     const serving = servings.find((item) => item.id === id);
     if (note && serving?.note) {
       window.openHospitalityNote(serving.note);
+    } else if (paidEdit && serving) {
+      startPaidCookEdit(paidEdit.closest("td"), serving);
     } else if (edit && serving) {
       startServingEdit(serving);
     } else if (remove && serving) {
@@ -400,12 +519,68 @@
     }
   });
 
+  document.getElementById("felogan-history-list").addEventListener("change", async (event) => {
+    const select = event.target.closest("[data-paid-cook]");
+    if (!select || select.disabled) {
+      return;
+    }
+    const serving = servings.find((item) => item.id === select.dataset.paidCook);
+    if (!serving || select.value === (serving.paidCook || "no")) {
+      return;
+    }
+    select.disabled = true;
+    try {
+      await api(`/v1/felogan/servings/${serving.id}`, {
+        method: "PUT",
+        body: JSON.stringify(servingUpdateBody(serving, { paidCook: select.value }))
+      });
+      showToast("Serving updated.");
+      await refreshHistory();
+    } catch (error) {
+      select.disabled = false;
+      showHistoryError(error.message);
+      showToast(error.message, "error");
+    }
+  });
+
+  document.getElementById("felogan-history-list").addEventListener("focusout", (event) => {
+    const select = event.target.closest("[data-paid-cook]");
+    if (!select || select.disabled) {
+      return;
+    }
+    const serving = servings.find((item) => item.id === select.dataset.paidCook);
+    if (serving) {
+      select.closest("td").innerHTML = paidCookCellHtml(serving);
+    }
+  });
+
+  document.getElementById("felogan-cook-share-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const shareError = document.getElementById("felogan-cook-share-error");
+    showError(shareError, "");
+    try {
+      const settings = await api("/v1/felogan/settings", {
+        method: "PUT",
+        body: JSON.stringify({ cookPercent: Number(document.getElementById("felogan-cook-percent").value) })
+      });
+      cookPercent = settings.cookPercent;
+      showToast("Cook share saved.");
+      await refreshCatalogs();
+    } catch (error) {
+      showError(shareError, error.message);
+      showToast(error.message, "error");
+    }
+  });
+
   ["rooms", "cooks", "menu-items"].forEach((type) => {
     const config = catalogConfig(type);
     document.getElementById(config.form).addEventListener("submit", (event) => {
       event.preventDefault();
       showError(document.getElementById(config.error), "");
-      submitCatalog(type).catch((error) => showError(document.getElementById(config.error), error.message));
+      submitCatalog(type).catch((error) => {
+        showError(document.getElementById(config.error), error.message);
+        showToast(error.message, "error");
+      });
     });
   });
 
@@ -445,16 +620,18 @@
   };
 
   function showPurchaseHistoryError(message) {
-    const summary = document.getElementById("felogan-purchase-history-summary");
-    summary.className = "history-summary-error";
-    summary.textContent = message;
+    const list = document.getElementById("felogan-purchase-history-list");
+    list.innerHTML = `<p class="error">${escapeHtml(message)}</p>`;
+  }
+
+  function extraItems() {
+    return menuItems.filter((item) => item.kind === "extra");
   }
 
   function renderPurchaseItemOptions() {
     const select = document.getElementById("felogan-purchase-item");
     const selected = select.value;
-    select.innerHTML = menuItems.map((item) =>
-      `<option value="${item.id}">${escapeHtml(item.name)} (${escapeHtml(item.kind)})</option>`).join("");
+    select.innerHTML = extraItems().map(option).join("");
     if ([...select.options].some((candidate) => candidate.value === selected)) {
       select.value = selected;
     }
@@ -463,28 +640,23 @@
   async function refreshStock() {
     await loadServingCatalogs();
     renderPurchaseItemOptions();
-    document.getElementById("felogan-stock-remaining").innerHTML = menuItems.length
+    const extras = extraItems();
+    document.getElementById("felogan-stock-remaining").innerHTML = extras.length
       ? `<table class="history-table">
-          <thead><tr><th>Item</th><th>Kind</th><th>Remaining</th></tr></thead>
-          <tbody>${menuItems.map((item) => `<tr>
+          <thead><tr><th>Item</th><th>Remaining</th></tr></thead>
+          <tbody>${extras.map((item) => `<tr>
             <td data-label="Item">${escapeHtml(item.name)}</td>
-            <td data-label="Kind">${escapeHtml(item.kind)}</td>
             <td data-label="Remaining" class="num">${item.remainingPacks}</td>
           </tr>`).join("")}</tbody>
         </table>`
-      : `<p class="muted history-empty">No catalog items.</p>`;
+      : `<p class="muted history-empty">No extras.</p>`;
     await refreshPurchaseHistory();
   }
 
   async function refreshPurchaseHistory() {
     const date = document.getElementById("felogan-purchase-history-date").value || manilaDate();
-    const data = await api(`/v1/felogan/purchases?date=${date}&range=${purchaseRange}`);
+    const data = await api(`/v1/felogan/purchases?date=${date}&range=day`);
     purchases = data.items || [];
-    const summary = document.getElementById("felogan-purchase-history-summary");
-    summary.className = "history-summary";
-    summary.innerHTML = `
-      <div><span>Purchases</span><strong>${data.totals.count}</strong></div>
-      <div><span>Qty</span><strong>${data.totals.qty}</strong></div>`;
     document.getElementById("felogan-purchase-history-list").innerHTML = purchases.length
       ? `<table class="history-table">
           <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Note</th><th>Delete</th></tr></thead>
@@ -496,7 +668,7 @@
             <td data-label="Delete"><button type="button" class="text-link danger" data-purchase-delete="${purchase.id}">Delete</button></td>
           </tr>`).join("")}</tbody>
         </table>`
-      : `<p class="muted history-empty">No purchases for this period.</p>`;
+      : `<p class="muted history-empty">No purchases for this date.</p>`;
   }
 
   window.deleteFeloganPurchase = async (id) => {
@@ -526,19 +698,13 @@
       document.getElementById("felogan-purchase-form").reset();
       document.getElementById("felogan-purchase-date").value = manilaDate();
       await refreshStock();
+      showToast("Purchase saved.");
     } catch (error) {
       showError(document.getElementById("felogan-purchase-error"), error.message);
+      showToast(error.message, "error");
     } finally {
       submit.disabled = false;
     }
-  });
-
-  document.querySelectorAll("[data-felogan-purchase-range]").forEach((button) => {
-    button.addEventListener("click", () => {
-      purchaseRange = button.dataset.feloganPurchaseRange;
-      document.querySelectorAll("[data-felogan-purchase-range]").forEach((tab) => tab.classList.toggle("active", tab === button));
-      refreshPurchaseHistory().catch((error) => showPurchaseHistoryError(error.message));
-    });
   });
 
   document.getElementById("felogan-purchase-history-date").addEventListener("change", () => {

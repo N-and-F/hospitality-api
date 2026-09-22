@@ -48,6 +48,22 @@ function showError(el, message) {
   el.textContent = message || "";
 }
 
+let toastTimer = null;
+
+function showToast(message, kind = "success") {
+  const toast = document.getElementById("app-toast");
+  const copy = document.getElementById("app-toast-copy");
+  clearTimeout(toastTimer);
+  copy.textContent = message || "";
+  toast.hidden = !message;
+  toast.classList.toggle("toast-error", Boolean(message) && kind === "error");
+  if (message) {
+    toastTimer = setTimeout(() => showToast(""), 2800);
+  }
+}
+
+document.getElementById("app-toast").addEventListener("click", () => showToast(""));
+
 function peso(value) {
   return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(value);
 }
@@ -538,8 +554,10 @@ txnForm.addEventListener("submit", async (event) => {
     if (wasEdit) {
       showPanel("history");
     }
+    showToast(wasEdit ? "Transaction updated." : "Transaction saved.");
   } catch (error) {
     showError(txnError, error.message);
+    showToast(error.message, "error");
   }
 });
 
@@ -697,8 +715,10 @@ openingForm.addEventListener("submit", async (event) => {
       })
     });
     await refreshLedger();
+    showToast("Wallets saved.");
   } catch (error) {
     showError(openingError, error.message);
+    showToast(error.message, "error");
   }
 });
 
@@ -717,8 +737,10 @@ accountForm.addEventListener("submit", async (event) => {
     });
     accountForm.reset();
     showSettingsScreen("users");
+    showToast("Account created.");
   } catch (error) {
     showError(errorEl, error.message);
+    showToast(error.message, "error");
   }
 });
 
@@ -782,6 +804,7 @@ document.querySelectorAll("[data-password-toggle]").forEach((button) => {
 });
 
 window.hospitalityApi = api;
+window.hospitalityToast = showToast;
 window.hospitalityCurrentUser = () => currentUser;
 window.hospitalityPeso = peso;
 window.hospitalityEscapeHtml = escapeHtml;

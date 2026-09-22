@@ -16,9 +16,38 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("id=\"choose-counter\"", html);
         Assert.Contains("id=\"felogan-view\"", html);
         Assert.Contains("id=\"switch-app\"", html);
-        Assert.Contains("/app.css?v=costing", html);
-        Assert.Contains("/app.js?v=costing", html);
-        Assert.Contains("/felogan.js?v=costing", html);
+        Assert.Contains("/app.css?v=save-toasts", html);
+        Assert.Contains("/app.js?v=save-toasts", html);
+        Assert.Contains("/felogan.js?v=save-toasts", html);
+        Assert.Contains("id=\"app-toast\"", html);
+        Assert.Contains("id=\"app-toast-copy\"", html);
+        Assert.DoesNotContain("id=\"felogan-toast\"", html);
+        Assert.Contains("M7.4 12.4 10.5 15.4 16.6 8.8", html);
+        Assert.DoesNotContain("id=\"felogan-additional-profit\"", html);
+        Assert.Contains("chooser-logo", html);
+        Assert.DoesNotContain("id=\"hospitality-settings\"", html);
+        Assert.DoesNotContain("id=\"felogan-settings-host\"", html);
+        Assert.Contains("data-felogan-nav=\"catalog\">Settings</button>", html);
+        Assert.Contains("data-felogan-settings-menu", html);
+        Assert.Contains("data-felogan-settings-back", html);
+        Assert.Contains("class=\"menu-item\" data-felogan-catalog=\"menu-items\"", html);
+        Assert.Contains("class=\"menu-item\" data-felogan-catalog=\"rooms\"", html);
+        Assert.Contains("class=\"menu-item\" data-felogan-catalog=\"cooks\"", html);
+        Assert.True(
+            html.IndexOf("data-felogan-catalog=\"menu-items\"", StringComparison.Ordinal)
+            < html.IndexOf("data-felogan-catalog=\"rooms\"", StringComparison.Ordinal));
+        Assert.True(
+            html.IndexOf("data-felogan-catalog=\"rooms\"", StringComparison.Ordinal)
+            < html.IndexOf("data-felogan-catalog=\"cooks\"", StringComparison.Ordinal));
+        Assert.Contains("data-catalog-section=\"rooms\" hidden", html);
+        Assert.Contains("data-catalog-section=\"cooks\" hidden", html);
+        Assert.Contains("data-catalog-section=\"menu-items\" hidden", html);
+        Assert.Contains("for=\"felogan-menu-name\">Name</label>", html);
+        Assert.Contains("for=\"felogan-menu-kind\">Kind</label>", html);
+        Assert.Contains("for=\"felogan-menu-sell\">Sell</label>", html);
+        Assert.Contains("for=\"felogan-menu-cost\">Cost</label>", html);
+        Assert.DoesNotContain("placeholder=\"Item name\"", html);
+        Assert.DoesNotContain("placeholder=\"Sell price\"", html);
         Assert.Contains("id=\"felogan-stock\"", html);
         Assert.Contains("data-felogan-nav=\"stock\"", html);
         Assert.DoesNotContain("Sign in to the counter", html);
@@ -45,18 +74,60 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains(
             "await window.openFeloganApp();\n    sessionStorage.setItem(appKey, \"felogan\");",
             app);
+        Assert.Contains("window.hospitalityToast = showToast", app);
+        Assert.Contains("showToast(wasEdit ? \"Transaction updated.\" : \"Transaction saved.\")", app);
+        Assert.Contains("showToast(\"Wallets saved.\")", app);
+        Assert.Contains("showToast(\"Account created.\")", app);
+        Assert.Contains("showToast(error.message, \"error\")", app);
+        Assert.Contains("window.hospitalityToast(message, kind)", felogan);
+        Assert.Contains("showToast(\"Purchase saved.\")", felogan);
+        Assert.Contains("showToast(\"Cook share saved.\")", felogan);
+        Assert.Contains("showToast(id ? `${labels[type]} updated.` : `${labels[type]} saved.`)", felogan);
+        Assert.Contains("showToast(error.message, \"error\")", felogan);
         Assert.Contains("window.bootHospitality", app);
+        Assert.DoesNotContain("window.openHospitalitySettings", app);
+        Assert.DoesNotContain("window.openHospitalitySettings();", felogan);
         Assert.DoesNotContain("if (token())", app);
         Assert.Contains("window.openFeloganApp", felogan);
         Assert.Contains("window.bootHospitality()", felogan);
         Assert.Contains("item.kind === \"plate\" || item.kind === \"extra\"", felogan);
-        Assert.Contains("Cook 40%", felogan);
-        Assert.Contains("/v1/felogan/purchases", felogan);
+        Assert.Contains("[\"plate\", \"Silog\"]", felogan);
+        Assert.Contains("if (kind === \"plate\") return \"Silog\"", felogan);
+        Assert.Contains("item.kind === \"stock\"", felogan);
+        Assert.Contains("fields.contains(note)", felogan);
+        Assert.Contains("plates.appendChild(note)", felogan);
+        Assert.Contains("data-step", felogan);
+        Assert.Contains("Cook ${cookPercent}%", felogan);
+        Assert.Contains("let catalogType = \"\"", felogan);
+        Assert.Contains("data-felogan-settings-back", felogan);
+        Assert.Contains("showCatalogSection", felogan);
+        Assert.Contains("class=\"heading-row purchase-history-heading\"", html);
+        Assert.Contains("function extraItems", felogan);
+        Assert.Contains("item.kind === \"extra\"", felogan);
+        Assert.Contains("<th>Item</th><th>Remaining</th>", felogan);
+        Assert.Contains("range=day", felogan);
+        Assert.DoesNotContain("data-felogan-purchase-range", html);
+        Assert.DoesNotContain("felogan-purchase-history-summary", html);
+        Assert.DoesNotContain("felogan-purchase-history-summary", felogan);
         Assert.Contains("includeArchived=true", felogan);
         Assert.Contains("<th>Profit</th><th>Cook</th><th>Paid cook</th><th>Note</th><th>Edit</th><th>Delete</th>", felogan);
+        Assert.Contains("data-paid-cook-edit=\"${serving.id}\"", felogan);
+        Assert.Contains("aria-label=\"Edit paid cook\"", felogan);
+        Assert.Contains("data-paid-cook=\"${serving.id}\"", felogan);
+        Assert.Contains("[\"yes\", \"na\", \"no\"]", felogan);
+        Assert.Contains("value === \"na\" ? \"N/A\"", felogan);
+        Assert.Contains("function servingUpdateBody", felogan);
+        Assert.Contains("paidCook: serving.paidCook || \"no\"", felogan);
+        Assert.Contains("additionalProfit: serving.additionalProfit ?? 0", felogan);
+        Assert.Contains("excessPaid: serving.excessPaid ?? 0", felogan);
+        Assert.DoesNotContain("paidSham: serving.paidSham || \"na\"", felogan);
+        Assert.Contains("closest(\"[data-paid-cook-edit]\")", felogan);
+        Assert.Contains("function menuTableHtml", felogan);
+        Assert.Contains("<th>Name</th><th>Kind</th><th>Sell</th><th>Cost</th><th>Profit</th><th>Cook ${cookPercent}%</th><th>Left</th>", felogan);
+        Assert.Contains("id=\"felogan-cook-percent\"", html);
+        Assert.Contains("/v1/felogan/settings", felogan);
         Assert.Contains(".join(\"<br>\")", felogan);
         Assert.Contains("${item.qty}× ${escapeHtml(item.name)}", felogan);
-        Assert.DoesNotContain("data-label=\"Cost\"", felogan);
     }
 
     [Fact]
@@ -69,6 +140,9 @@ public sealed class WebUiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Contains("itemsById.set(item.id, { ...current, ...item })", felogan);
         Assert.Contains("if (submit.disabled)", felogan);
         Assert.Contains("submit.disabled = true", felogan);
+        Assert.Contains("Serving saved.", felogan);
+        Assert.Contains("Serving updated.", felogan);
+        Assert.Contains("showToast(savedEdit ? \"Serving updated.\" : \"Serving saved.\")", felogan);
         Assert.Contains("finally", felogan);
         Assert.Contains("submit.disabled = false", felogan);
         Assert.Contains(

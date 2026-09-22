@@ -5,6 +5,16 @@ namespace Hospitality.Api.Felogan;
 
 public sealed class FeloganService(AppDbContext db)
 {
+    private static readonly Dictionary<string, string> SilogSudAnByPlate = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Danggit Silog"] = "Danggit",
+        ["Longsilog"] = "Longganisa",
+        ["Tocilog"] = "Tocino",
+        ["Tosilog"] = "Tocino",
+        ["Hotsilog"] = "Hotdog",
+        ["Hamsilog"] = "Ham",
+        ["Cornsilog"] = "Corned beef"
+    };
     public async Task<CatalogListDto> ListRoomsAsync(
         bool includeArchived,
         CancellationToken cancellationToken = default)
@@ -301,6 +311,24 @@ public sealed class FeloganService(AppDbContext db)
         return (200, null, null, ToDto(cook));
     }
 
+    public async Task<FeloganSettingsDto> GetSettingsAsync(CancellationToken cancellationToken = default) =>
+        new((await SettingsAsync(cancellationToken)).CookPercent);
+
+    public async Task<(int Status, string? Code, string? Message, FeloganSettingsDto? Value)> UpdateSettingsAsync(
+        FeloganSettingsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.CookPercent is not int cookPercent || cookPercent is < 0 or > 100)
+        {
+            return (400, "VALIDATION_ERROR", "Cook percent must be an integer from 0 to 100.", null);
+        }
+
+        var settings = await SettingsAsync(cancellationToken);
+        settings.CookPercent = cookPercent;
+        await db.SaveChangesAsync(cancellationToken);
+        return (200, null, null, new FeloganSettingsDto(settings.CookPercent));
+    }
+
     public async Task<MenuItemListDto> ListMenuItemsAsync(
         bool includeArchived,
         CancellationToken cancellationToken = default)
@@ -316,8 +344,9 @@ public sealed class FeloganService(AppDbContext db)
             .ThenBy(item => item.Name)
             .ToListAsync(cancellationToken);
         var remaining = await RemainingByItemIdAsync(items, cancellationToken);
+        var cookPercent = await CookPercentAsync(cancellationToken);
 
-        return new MenuItemListDto(items.Select(item => ToDto(item, remaining[item.Id])).ToArray());
+        return new MenuItemListDto(items.Select(item => ToDto(item, remaining[item.Id], cookPercent)).ToArray());
     }
 
     public async Task<(int Status, string? Code, string? Message, MenuItemDto? Value)> CreateMenuItemAsync(
@@ -357,7 +386,7 @@ public sealed class FeloganService(AppDbContext db)
 
         db.FeloganMenuItems.Add(item);
         await db.SaveChangesAsync(cancellationToken);
-        return (200, null, null, ToDto(item, 0));
+        return (200, null, null, ToDto(item, 0, await CookPercentAsync(cancellationToken)));
     }
 
     public async Task<(int Status, string? Code, string? Message, MenuItemDto? Value)> UpdateMenuItemAsync(
@@ -490,9 +519,7 @@ public sealed class FeloganService(AppDbContext db)
             request.AdditionalProfit,
             request.ExcessPaid,
             request.PaidCook,
-            request.PaidSham,
-            "no",
-            "na");
+            "no");
         if (settlement.Failure is not null)
         {
             return (settlement.Failure.Status, settlement.Failure.Code, settlement.Failure.Message, null);
@@ -550,7 +577,8 @@ public sealed class FeloganService(AppDbContext db)
             AdditionalProfit = settlement.AdditionalProfit,
             ExcessPaid = settlement.ExcessPaid,
             PaidCook = settlement.PaidCook,
-            PaidSham = settlement.PaidSham,
+            PaidSham = "na",
+            CookPercent = await CookPercentAsync(cancellationToken),
             CreatedByUserId = userId,
             CreatedAt = DateTimeOffset.UtcNow,
             ClientRequestId = request.ClientRequestId.Value,
@@ -622,9 +650,7 @@ public sealed class FeloganService(AppDbContext db)
             request.AdditionalProfit,
             request.ExcessPaid,
             request.PaidCook,
-            request.PaidSham,
-            serving.PaidCook,
-            serving.PaidSham);
+            serving.PaidCook);
         if (settlement.Failure is not null)
         {
             return (settlement.Failure.Status, settlement.Failure.Code, settlement.Failure.Message, null);
@@ -691,7 +717,6 @@ public sealed class FeloganService(AppDbContext db)
         serving.AdditionalProfit = settlement.AdditionalProfit;
         serving.ExcessPaid = settlement.ExcessPaid;
         serving.PaidCook = settlement.PaidCook;
-        serving.PaidSham = settlement.PaidSham;
 
         var availableExistingLines = existingLines
             .GroupBy(line => line.MenuItemId)
@@ -918,7 +943,6 @@ public sealed class FeloganService(AppDbContext db)
                 items.Sum(item => item.Totals.Sell),
                 items.Sum(item => item.Totals.Cost),
                 items.Sum(item => item.Totals.Profit),
-                items.Sum(item => item.Totals.Sham),
                 items.Sum(item => item.Totals.Cook),
                 items.Sum(item => item.Totals.Nf),
                 items.Sum(item => item.Totals.House))));
@@ -1021,9 +1045,9 @@ public sealed class FeloganService(AppDbContext db)
     private static CatalogItemDto ToDto(FeloganCook cook) =>
         new(cook.Id, cook.Name, cook.ArchivedAt);
 
-    private static MenuItemDto ToDto(FeloganMenuItem item, int remainingPacks)
+    private static MenuItemDto ToDto(FeloganMenuItem item, int remainingPacks, int cookPercent)
     {
-        var (profit, sham, cook, nf, house) = ItemSplit(item.SellPrice, item.Cost);
+        var (profit, cook, nf, house) = ItemSplit(item.SellPrice, item.Cost, cookPercent);
         return new(
             item.Id,
             item.Name,
@@ -1033,28 +1057,44 @@ public sealed class FeloganService(AppDbContext db)
             item.OpeningPacks,
             remainingPacks,
             profit,
-            sham,
             cook,
             nf,
             house,
             item.ArchivedAt);
     }
 
-    private static (decimal Profit, decimal Sham, decimal Cook, decimal Nf, decimal House) ItemSplit(
+    private static (decimal Profit, decimal Cook, decimal Nf, decimal House) ItemSplit(
         decimal sell,
-        decimal cost)
+        decimal cost,
+        int cookPercent)
     {
         var profit = decimal.Round(sell - cost, 2, MidpointRounding.AwayFromZero);
-        var cook = decimal.Round(profit * 0.40m, 2, MidpointRounding.AwayFromZero);
-        var sham = decimal.Round(profit * 0.10m, 2, MidpointRounding.AwayFromZero);
-        var nf = profit - cook - sham;
-        return (profit, sham, cook, nf, nf + cost);
+        var cook = decimal.Round(profit * cookPercent / 100m, 2, MidpointRounding.AwayFromZero);
+        var nf = profit - cook;
+        return (profit, cook, nf, nf + cost);
+    }
+
+    private async Task<int> CookPercentAsync(CancellationToken cancellationToken) =>
+        (await SettingsAsync(cancellationToken)).CookPercent;
+
+    private async Task<FeloganSettings> SettingsAsync(CancellationToken cancellationToken)
+    {
+        var settings = await db.FeloganSettings.SingleOrDefaultAsync(cancellationToken);
+        if (settings is not null)
+        {
+            return settings;
+        }
+
+        settings = new FeloganSettings { Id = Guid.NewGuid(), CookPercent = 40 };
+        db.FeloganSettings.Add(settings);
+        await db.SaveChangesAsync(cancellationToken);
+        return settings;
     }
 
     private async Task<MenuItemDto> ToDtoAsync(FeloganMenuItem item, CancellationToken cancellationToken)
     {
         var remaining = await RemainingByItemIdAsync([item], cancellationToken);
-        return ToDto(item, remaining[item.Id]);
+        return ToDto(item, remaining[item.Id], await CookPercentAsync(cancellationToken));
     }
 
     private async Task<Dictionary<Guid, int>> RemainingByItemIdAsync(
@@ -1067,9 +1107,26 @@ public sealed class FeloganService(AppDbContext db)
             .Where(purchase => ids.Contains(purchase.MenuItemId))
             .Select(purchase => new { purchase.MenuItemId, purchase.Qty })
             .ToListAsync(cancellationToken);
+        var catalog = await db.FeloganMenuItems
+            .AsNoTracking()
+            .Select(item => new { item.Id, item.Name, item.Kind })
+            .ToListAsync(cancellationToken);
+        var extraIdByName = catalog
+            .Where(item => item.Kind == "extra")
+            .ToDictionary(item => item.Name, item => item.Id, StringComparer.OrdinalIgnoreCase);
+        extraIdByName.TryGetValue("Egg", out var eggId);
+        var sudAnByPlateId = new Dictionary<Guid, Guid>();
+        foreach (var plate in catalog.Where(item => item.Kind == "plate"))
+        {
+            if (SilogSudAnByPlate.TryGetValue(plate.Name, out var extraName)
+                && extraIdByName.TryGetValue(extraName, out var extraId))
+            {
+                sudAnByPlateId[plate.Id] = extraId;
+            }
+        }
+
         var servedRows = await db.FeloganServingLines
             .AsNoTracking()
-            .Where(line => ids.Contains(line.MenuItemId))
             .Select(line => new { line.MenuItemId, line.Qty })
             .ToListAsync(cancellationToken);
         var purchased = purchasedRows
@@ -1078,12 +1135,37 @@ public sealed class FeloganService(AppDbContext db)
         var served = servedRows
             .GroupBy(row => row.MenuItemId)
             .ToDictionary(group => group.Key, group => group.Sum(row => row.Qty));
+        var sudAnFromSilog = new Dictionary<Guid, int>();
+        var eggFromSilog = 0;
+        foreach (var row in servedRows)
+        {
+            if (!sudAnByPlateId.TryGetValue(row.MenuItemId, out var extraId))
+            {
+                continue;
+            }
+
+            sudAnFromSilog[extraId] = sudAnFromSilog.GetValueOrDefault(extraId) + row.Qty;
+            eggFromSilog += row.Qty;
+        }
 
         return items.ToDictionary(
             item => item.Id,
-            item => item.OpeningPacks
-                + purchased.GetValueOrDefault(item.Id)
-                - served.GetValueOrDefault(item.Id));
+            item =>
+            {
+                var consumed = served.GetValueOrDefault(item.Id);
+                if (item.Kind == "extra")
+                {
+                    consumed += sudAnFromSilog.GetValueOrDefault(item.Id);
+                    if (item.Id == eggId)
+                    {
+                        consumed += eggFromSilog;
+                    }
+                }
+
+                return item.OpeningPacks
+                    + purchased.GetValueOrDefault(item.Id)
+                    - consumed;
+            });
     }
 
     private static PurchaseDto ToDto(FeloganPurchase purchase) =>
@@ -1106,7 +1188,7 @@ public sealed class FeloganService(AppDbContext db)
             line.SnapshotSellPrice,
             line.SnapshotCost,
             line.Qty * line.SnapshotSellPrice)).ToArray();
-        var (cost, profit, sham, cook, nf, house) = SettlementFrom(serving.Lines);
+        var (cost, profit, cook, nf, house) = SettlementFrom(serving.Lines, serving.CookPercent);
         return new ServingDto(
             serving.Id,
             serving.ServedOn,
@@ -1119,34 +1201,32 @@ public sealed class FeloganService(AppDbContext db)
                 lines.Sum(line => line.SellTotal),
                 cost,
                 profit,
-                sham,
                 cook,
                 nf,
                 house),
             serving.AdditionalProfit,
             serving.ExcessPaid,
             serving.PaidCook,
-            serving.PaidSham,
+            serving.CookPercent,
             serving.CreatedAt,
             serving.ClientRequestId);
     }
 
-    private static (decimal Cost, decimal Profit, decimal Sham, decimal Cook, decimal Nf, decimal House) SettlementFrom(
-        IEnumerable<FeloganServingLine> lines)
+    private static (decimal Cost, decimal Profit, decimal Cook, decimal Nf, decimal House) SettlementFrom(
+        IEnumerable<FeloganServingLine> lines,
+        int cookPercent)
     {
         var sell = lines.Sum(line => line.Qty * line.SnapshotSellPrice);
         var cost = decimal.Round(lines.Sum(line => line.Qty * line.SnapshotCost), 2, MidpointRounding.AwayFromZero);
-        var (profit, sham, cook, nf, house) = ItemSplit(sell, cost);
-        return (cost, profit, sham, cook, nf, house);
+        var (profit, cook, nf, house) = ItemSplit(sell, cost, cookPercent);
+        return (cost, profit, cook, nf, house);
     }
 
     private static SettlementRead ReadSettlement(
         decimal additionalProfit,
         decimal excessPaid,
         string? paidCook,
-        string? paidSham,
-        string defaultPaidCook,
-        string defaultPaidSham)
+        string defaultPaidCook)
     {
         if (additionalProfit < 0
             || excessPaid < 0
@@ -1160,8 +1240,7 @@ public sealed class FeloganService(AppDbContext db)
                     "Additional profit and excess paid must be non-negative with at most 2 decimal places."),
                 0,
                 0,
-                defaultPaidCook,
-                defaultPaidSham);
+                defaultPaidCook);
         }
 
         if (paidCook is { Length: > 0 } && !IsPaidFlag(paidCook))
@@ -1170,26 +1249,14 @@ public sealed class FeloganService(AppDbContext db)
                 new CatalogFailure(400, "VALIDATION_ERROR", "Paid cook must be yes, na, or no."),
                 additionalProfit,
                 excessPaid,
-                defaultPaidCook,
-                defaultPaidSham);
-        }
-
-        if (paidSham is { Length: > 0 } && !IsPaidFlag(paidSham))
-        {
-            return new SettlementRead(
-                new CatalogFailure(400, "VALIDATION_ERROR", "Paid sham must be yes, na, or no."),
-                additionalProfit,
-                excessPaid,
-                defaultPaidCook,
-                defaultPaidSham);
+                defaultPaidCook);
         }
 
         return new SettlementRead(
             null,
             additionalProfit,
             excessPaid,
-            PaidOrDefault(paidCook, defaultPaidCook),
-            PaidOrDefault(paidSham, defaultPaidSham));
+            PaidOrDefault(paidCook, defaultPaidCook));
     }
 
     private static bool IsPaidFlag(string value) =>
@@ -1234,6 +1301,5 @@ public sealed class FeloganService(AppDbContext db)
         CatalogFailure? Failure,
         decimal AdditionalProfit,
         decimal ExcessPaid,
-        string PaidCook,
-        string PaidSham);
+        string PaidCook);
 }

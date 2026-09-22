@@ -26,7 +26,6 @@ public sealed record MenuItemDto(
     int OpeningPacks,
     int RemainingPacks,
     decimal Profit,
-    decimal Sham,
     decimal Cook,
     decimal Nf,
     decimal House,
@@ -50,7 +49,6 @@ public sealed class CreateServingRequest
     public decimal AdditionalProfit { get; set; }
     public decimal ExcessPaid { get; set; }
     public string? PaidCook { get; set; }
-    public string? PaidSham { get; set; }
     public Guid? ClientRequestId { get; set; }
 }
 
@@ -64,7 +62,6 @@ public sealed class UpdateServingRequest
     public decimal AdditionalProfit { get; set; }
     public decimal ExcessPaid { get; set; }
     public string? PaidCook { get; set; }
-    public string? PaidSham { get; set; }
 }
 
 public sealed record ServingCatalogItemDto(Guid Id, string Name);
@@ -83,7 +80,6 @@ public sealed record ServingTotalsDto(
     decimal Sell,
     decimal Cost,
     decimal Profit,
-    decimal Sham,
     decimal Cook,
     decimal Nf,
     decimal House);
@@ -99,7 +95,7 @@ public sealed record ServingDto(
     decimal AdditionalProfit,
     decimal ExcessPaid,
     string PaidCook,
-    string PaidSham,
+    int CookPercent,
     DateTimeOffset CreatedAt,
     Guid ClientRequestId);
 
@@ -109,7 +105,6 @@ public sealed record ServingListTotalsDto(
     decimal Sell,
     decimal Cost,
     decimal Profit,
-    decimal Sham,
     decimal Cook,
     decimal Nf,
     decimal House);
@@ -145,3 +140,10 @@ public sealed record PurchaseListDto(
     string Range,
     IReadOnlyList<PurchaseDto> Items,
     PurchaseListTotalsDto Totals);
+
+public sealed class FeloganSettingsRequest
+{
+    public int? CookPercent { get; set; }
+}
+
+public sealed record FeloganSettingsDto(int CookPercent);

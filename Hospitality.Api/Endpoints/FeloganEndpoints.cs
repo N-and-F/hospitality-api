@@ -133,6 +133,25 @@ public static class FeloganEndpoints
         })
             .WithName("UnarchiveFeloganCook");
 
+        felogan.MapGet("/settings", async (
+            FeloganService service,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await service.GetSettingsAsync(cancellationToken)))
+            .WithName("GetFeloganSettings");
+
+        felogan.MapPut("/settings", async (
+            FeloganSettingsRequest request,
+            FeloganService service,
+            HttpContext http,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.UpdateSettingsAsync(request, cancellationToken);
+            return result.Value is not null
+                ? Results.Ok(result.Value)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .WithName("UpdateFeloganSettings");
+
         felogan.MapGet("/menu-items", async (
             bool? includeArchived,
             FeloganService service,

@@ -16,7 +16,7 @@ public sealed class FeloganTests
         var client = factory.CreateClient();
         await AuthorizeStaffAsync(client, "felostaff@example.com", "felostaff");
 
-        foreach (var path in new[] { "rooms", "cooks", "menu-items" })
+        foreach (var path in new[] { "rooms", "cooks", "menu-items", "settings" })
         {
             var response = await client.GetAsync($"/v1/felogan/{path}");
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -787,12 +787,13 @@ public sealed class FeloganTests
         Assert.Equal(240.00m, totals.GetProperty("sell").GetDecimal());
         Assert.Equal(110.34m, totals.GetProperty("cost").GetDecimal());
         Assert.Equal(129.66m, totals.GetProperty("profit").GetDecimal());
-        Assert.Equal(12.97m, totals.GetProperty("sham").GetDecimal());
+        Assert.False(totals.TryGetProperty("sham", out _));
         Assert.Equal(51.86m, totals.GetProperty("cook").GetDecimal());
-        Assert.Equal(64.83m, totals.GetProperty("nf").GetDecimal());
-        Assert.Equal(175.17m, totals.GetProperty("house").GetDecimal());
+        Assert.Equal(77.80m, totals.GetProperty("nf").GetDecimal());
+        Assert.Equal(188.14m, totals.GetProperty("house").GetDecimal());
         Assert.Equal("no", row.RootElement.GetProperty("paidCook").GetString());
-        Assert.Equal("na", row.RootElement.GetProperty("paidSham").GetString());
+        Assert.Equal(40, row.RootElement.GetProperty("cookPercent").GetInt32());
+        Assert.False(row.RootElement.TryGetProperty("paidSham", out _));
     }
 
     [Fact]
@@ -833,7 +834,6 @@ public sealed class FeloganTests
             cookId,
             lines = new[] { new { menuItemId = tocilogId, qty = 1 } },
             paidCook = "yes",
-            paidSham = "yes",
             clientRequestId = Guid.NewGuid()
         });
         created.EnsureSuccessStatusCode();
@@ -930,6 +930,48 @@ public sealed class FeloganTests
     }
 
     [Fact]
+    public async Task Serving_silog_decrements_sud_an_and_egg()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, _) = await ServingIdsAsync(client);
+
+        async Task<JsonElement[]> LoadMenuAsync()
+        {
+            var list = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items");
+            return list.GetProperty("items").EnumerateArray().ToArray();
+        }
+
+        var menu = await LoadMenuAsync();
+        JsonElement Item(string name) => menu.First(x => x.GetProperty("name").GetString() == name);
+        int Remaining(string name) => Item(name).GetProperty("remainingPacks").GetInt32();
+
+        var hamBefore = Remaining("Ham");
+        var eggBefore = Remaining("Egg");
+        var riceBefore = Remaining("Rice");
+        var hamsilogId = Item("Hamsilog").GetProperty("id").GetGuid();
+        Assert.Equal(12, hamBefore);
+        Assert.Equal(-7, eggBefore);
+
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-16",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = hamsilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+
+        menu = await LoadMenuAsync();
+        Assert.Equal(hamBefore - 2, Remaining("Ham"));
+        Assert.Equal(eggBefore - 2, Remaining("Egg"));
+        Assert.Equal(riceBefore, Remaining("Rice"));
+        Assert.Equal(10, Remaining("Hamsilog"));
+    }
+
+    [Fact]
     public async Task Staff_cannot_list_purchases()
     {
         await using var factory = new ApiFactory();
@@ -950,10 +992,10 @@ public sealed class FeloganTests
         Assert.Equal(120.00m, tocilog.GetProperty("sellPrice").GetDecimal());
         Assert.Equal(55.17m, tocilog.GetProperty("cost").GetDecimal());
         Assert.Equal(64.83m, tocilog.GetProperty("profit").GetDecimal());
-        Assert.Equal(6.48m, tocilog.GetProperty("sham").GetDecimal());
+        Assert.False(tocilog.TryGetProperty("sham", out _));
         Assert.Equal(25.93m, tocilog.GetProperty("cook").GetDecimal());
-        Assert.Equal(32.42m, tocilog.GetProperty("nf").GetDecimal());
-        Assert.Equal(87.59m, tocilog.GetProperty("house").GetDecimal());
+        Assert.Equal(38.90m, tocilog.GetProperty("nf").GetDecimal());
+        Assert.Equal(94.07m, tocilog.GetProperty("house").GetDecimal());
     }
 
     [Fact]
@@ -989,6 +1031,93 @@ public sealed class FeloganTests
         Assert.Equal(
             cookShare,
             listed.GetProperty("items")[0].GetProperty("totals").GetProperty("cook").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Settings_default_cook_percent_is_forty()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var settings = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/settings");
+        Assert.Equal(40, settings.GetProperty("cookPercent").GetInt32());
+    }
+
+    [Fact]
+    public async Task Cook_percent_change_applies_to_new_servings_not_old()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        var (roomId, cookId, tocilogId) = await ServingIdsAsync(client);
+        var created = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var before = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var oldId = before.RootElement.GetProperty("id").GetGuid();
+        Assert.Equal(51.86m, before.RootElement.GetProperty("totals").GetProperty("cook").GetDecimal());
+
+        var put = await client.PutAsJsonAsync("/v1/felogan/settings", new { cookPercent = 35 });
+        put.EnsureSuccessStatusCode();
+        using var settings = JsonDocument.Parse(await put.Content.ReadAsStringAsync());
+        Assert.Equal(35, settings.RootElement.GetProperty("cookPercent").GetInt32());
+
+        var menu = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/menu-items");
+        var tocilog = menu.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("name").GetString() == "Tocilog");
+        Assert.Equal(22.69m, tocilog.GetProperty("cook").GetDecimal());
+        Assert.Equal(42.14m, tocilog.GetProperty("nf").GetDecimal());
+
+        var listed = await client.GetFromJsonAsync<JsonElement>("/v1/felogan/servings?date=2026-09-06");
+        var oldRow = listed.GetProperty("items").EnumerateArray()
+            .First(x => x.GetProperty("id").GetGuid() == oldId);
+        Assert.Equal(40, oldRow.GetProperty("cookPercent").GetInt32());
+        Assert.Equal(51.86m, oldRow.GetProperty("totals").GetProperty("cook").GetDecimal());
+
+        var createdNew = await client.PostAsJsonAsync("/v1/felogan/servings", new
+        {
+            servedOn = "2026-09-06",
+            roomId,
+            cookId,
+            lines = new[] { new { menuItemId = tocilogId, qty = 2 } },
+            clientRequestId = Guid.NewGuid()
+        });
+        createdNew.EnsureSuccessStatusCode();
+        using var after = JsonDocument.Parse(await createdNew.Content.ReadAsStringAsync());
+        Assert.Equal(35, after.RootElement.GetProperty("cookPercent").GetInt32());
+        Assert.Equal(45.38m, after.RootElement.GetProperty("totals").GetProperty("cook").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Settings_rejects_cook_percent_outside_zero_to_hundred()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeAdminAsync(client);
+        foreach (var value in new[] { -1, 101 })
+        {
+            var response = await client.PutAsJsonAsync("/v1/felogan/settings", new { cookPercent = value });
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("VALIDATION_ERROR", await ReadErrorCode(response));
+        }
+    }
+
+    [Fact]
+    public async Task Staff_cannot_get_or_put_settings()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "settingsstaff@example.com", "settingsstaff");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/v1/felogan/settings")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await client.PutAsJsonAsync("/v1/felogan/settings", new { cookPercent = 35 })).StatusCode);
     }
 
     private static async Task<(Guid RoomId, Guid CookId, Guid TocilogId)> ServingIdsAsync(

@@ -163,6 +163,11 @@ namespace Hospitality.Api.Data.Migrations
                     b.Property<Guid>("CookId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("CookPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(40);
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -248,6 +253,22 @@ namespace Hospitality.Api.Data.Migrations
                     b.HasIndex("ServingId");
 
                     b.ToTable("FeloganServingLines");
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.FeloganSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CookPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(40);
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FeloganSettings");
                 });
 
             modelBuilder.Entity("Hospitality.Api.Data.LedgerTransaction", b =>

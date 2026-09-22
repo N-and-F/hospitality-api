@@ -75,6 +75,15 @@ public static class FeloganSeed
             }
         }
 
+        if (!await db.FeloganSettings.AnyAsync(cancellationToken))
+        {
+            db.FeloganSettings.Add(new FeloganSettings
+            {
+                Id = Guid.NewGuid(),
+                CookPercent = 40
+            });
+        }
+
         await db.SaveChangesAsync(cancellationToken);
     }
 }

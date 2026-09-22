@@ -11,6 +11,7 @@ public sealed class FeloganServing
     public decimal ExcessPaid { get; set; }
     public string PaidCook { get; set; } = "no";
     public string PaidSham { get; set; } = "na";
+    public int CookPercent { get; set; } = 40;
     public required string CreatedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid ClientRequestId { get; set; }

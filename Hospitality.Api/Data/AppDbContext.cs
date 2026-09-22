@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<FeloganServing> FeloganServings => Set<FeloganServing>();
     public DbSet<FeloganServingLine> FeloganServingLines => Set<FeloganServingLine>();
     public DbSet<FeloganPurchase> FeloganPurchases => Set<FeloganPurchase>();
+    public DbSet<FeloganSettings> FeloganSettings => Set<FeloganSettings>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -72,6 +73,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.Property(x => x.ExcessPaid).HasPrecision(18, 2);
             entity.Property(x => x.PaidCook).HasMaxLength(8);
             entity.Property(x => x.PaidSham).HasMaxLength(8);
+            entity.Property(x => x.CookPercent).HasDefaultValue(40);
             entity.HasOne(x => x.Room)
                 .WithMany()
                 .HasForeignKey(x => x.RoomId)
@@ -108,6 +110,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
                 .WithMany()
                 .HasForeignKey(x => x.MenuItemId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+        builder.Entity<FeloganSettings>(entity =>
+        {
+            entity.Property(x => x.CookPercent).HasDefaultValue(40);
         });
     }
 }
