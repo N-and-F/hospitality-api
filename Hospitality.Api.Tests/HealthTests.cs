@@ -53,5 +53,23 @@ public sealed class HealthTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var css = await client.GetStringAsync("/app.css");
         Assert.Contains("[hidden]", css);
         Assert.Contains("display: none !important", css);
+        Assert.Contains(".serving-line:nth-child(odd)", css);
+        Assert.DoesNotContain("border-left-color: var(--accent)", css);
+        Assert.Contains("text-align: center;", css);
+        Assert.Contains(".stepper input::-webkit-inner-spin-button", css);
+        Assert.DoesNotContain(".settings-options-label", css);
+        Assert.Contains("[data-felogan-settings-menu]", css);
+        Assert.Contains("[data-catalog-section=\"menu-items\"]:not([hidden])", css);
+        Assert.Contains("#felogan-rooms-list .item,\n#felogan-cooks-list .item {\n  display: flex;", css);
+        Assert.Contains(".history-table .text-link {\n  color: var(--accent);", css);
+        Assert.Contains(".history-date {\n  display: flex;", css);
+        Assert.Contains(".menu-quantity-fields legend {\n  display: block;\n  width: 100%;\n  margin-bottom: 0.15rem;\n  text-align: center;", css);
+        Assert.Contains(".toast {\n  display: flex;\n  align-items: center;", css);
+        Assert.Contains(".toast.toast-error {\n  background: var(--danger);", css);
+        Assert.Contains(".cook-share-form {\n  display: flex;\n  align-items: center;", css);
+        Assert.Contains(".menu-form {\n  display: flex;\n  flex-wrap: nowrap;", css);
+        Assert.Contains(".menu-form input,\n.menu-form select {\n  flex: 1;", css);
+        Assert.Contains(".paid-cook-cell {\n  display: inline-flex;", css);
+        Assert.Contains(".history-table .icon-btn {\n  color: var(--accent);", css);
     }
 }

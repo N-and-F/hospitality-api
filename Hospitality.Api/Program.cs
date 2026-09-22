@@ -3,6 +3,7 @@ using Hospitality.Api.Auth;
 using Hospitality.Api.Common;
 using Hospitality.Api.Data;
 using Hospitality.Api.Endpoints;
+using Hospitality.Api.Felogan;
 using Hospitality.Api.Identity;
 using Hospitality.Api.Ledger;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -87,7 +88,9 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<LedgerService>();
+builder.Services.AddScoped<FeloganService>();
 builder.Services.AddHostedService<IdentitySeedHostedService>();
+builder.Services.AddHostedService<FeloganSeedHostedService>();
 
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(port))
@@ -116,6 +119,7 @@ v1.MapAuthEndpoints();
 v1.MapCurrentUserEndpoints();
 v1.MapStaffEndpoints();
 v1.MapLedgerEndpoints();
+v1.MapFeloganEndpoints();
 
 app.Run();
 
