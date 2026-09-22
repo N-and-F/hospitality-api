@@ -37,8 +37,8 @@ Let `feeGcash = profit` when profit > 0 and `profitInGcash` is true, else 0.
 | `cash_out_with_charge` | −amount + feeCash | +amount + feeGcash | 0 |
 | `load_via_gcash` | +amount + feeCash | −amount + feeGcash | 0 |
 | `load_via_tpc` | +amount + feeCash | +feeGcash | −amount |
-| `top_up_gcash` | −amount | +amount | 0 |
-| `top_up_tpc` | −amount | 0 | +amount |
+| `top_up_gcash` | 0 | +amount | 0 |
+| `top_up_tpc` | 0 | 0 | +amount |
 | `add_cash_capital` | +amount | 0 | 0 |
 | `expenses` | −amount | 0 | 0 |
 | `bank_cash_deposit` | −amount | 0 | 0 |

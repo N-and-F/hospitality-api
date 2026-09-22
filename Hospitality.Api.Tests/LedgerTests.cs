@@ -163,6 +163,35 @@ public sealed class LedgerTests
     }
 
     [Fact]
+    public async Task Top_up_gcash_and_tpc_do_not_require_cash()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "topup@example.com", "topup");
+
+        var gcash = await client.PostAsJsonAsync("/v1/transactions", new
+        {
+            method = "top_up_gcash",
+            amount = 250,
+            clientRequestId = Guid.NewGuid()
+        });
+        gcash.EnsureSuccessStatusCode();
+
+        var tpc = await client.PostAsJsonAsync("/v1/transactions", new
+        {
+            method = "top_up_tpc",
+            amount = 80,
+            clientRequestId = Guid.NewGuid()
+        });
+        tpc.EnsureSuccessStatusCode();
+
+        var wallets = await client.GetFromJsonAsync<JsonElement>("/v1/wallets");
+        Assert.Equal(0, wallets.GetProperty("cashOnHand").GetDecimal());
+        Assert.Equal(250, wallets.GetProperty("gcash").GetDecimal());
+        Assert.Equal(80, wallets.GetProperty("tpc").GetDecimal());
+    }
+
+    [Fact]
     public async Task Staff_and_admin_see_all_transactions()
     {
         await using var factory = new ApiFactory();

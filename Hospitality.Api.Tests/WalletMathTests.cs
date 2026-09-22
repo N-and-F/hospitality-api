@@ -22,10 +22,20 @@ public sealed class WalletMathTests
     }
 
     [Fact]
-    public void Top_up_forces_zero_profit()
+    public void Top_up_gcash_credits_gcash_only()
     {
         var deltas = WalletMath.Deltas(TransactionMethods.TopUpGcash, 1000, 99, profitInGcash: false);
-        Assert.Equal(-1000, deltas.CashOnHand);
+        Assert.Equal(0, deltas.CashOnHand);
         Assert.Equal(1000, deltas.Gcash);
+        Assert.Equal(0, deltas.Tpc);
+    }
+
+    [Fact]
+    public void Top_up_tpc_credits_tpc_only()
+    {
+        var deltas = WalletMath.Deltas(TransactionMethods.TopUpTpc, 400, 99, profitInGcash: true);
+        Assert.Equal(0, deltas.CashOnHand);
+        Assert.Equal(0, deltas.Gcash);
+        Assert.Equal(400, deltas.Tpc);
     }
 }
