@@ -163,6 +163,108 @@ public sealed class LedgerTests
     }
 
     [Fact]
+    public async Task Load_via_tpc_with_cashback_credits_tpc()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "tpc-cb@example.com", "tpccb");
+
+        var created = await client.PostAsJsonAsync("/v1/transactions", new
+        {
+            method = "load_via_tpc",
+            amount = 50,
+            profit = 5,
+            cashback = 1,
+            clientRequestId = Guid.NewGuid()
+        });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        Assert.Equal(1, row.RootElement.GetProperty("cashback").GetDecimal());
+        Assert.Equal(-49, row.RootElement.GetProperty("deltas").GetProperty("tpc").GetDecimal());
+        Assert.Equal(55, row.RootElement.GetProperty("deltas").GetProperty("cashOnHand").GetDecimal());
+
+        var wallets = await client.GetFromJsonAsync<JsonElement>("/v1/wallets");
+        Assert.Equal(-49, wallets.GetProperty("tpc").GetDecimal());
+        Assert.Equal(55, wallets.GetProperty("cashOnHand").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Load_via_tpc_rejects_negative_cashback()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "tpc-neg@example.com", "tpcneg");
+
+        var created = await client.PostAsJsonAsync("/v1/transactions", new
+        {
+            method = "load_via_tpc",
+            amount = 50,
+            cashback = -1,
+            clientRequestId = Guid.NewGuid()
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, created.StatusCode);
+        using var body = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        Assert.Equal("VALIDATION_ERROR", body.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Cashback_is_ignored_unless_load_via_tpc()
+    {
+        await using var factory = new ApiFactory();
+        var client = factory.CreateClient();
+        await AuthorizeStaffAsync(client, "tpc-ign@example.com", "tpcign");
+        await SeedOpeningViaAdmin(factory, cash: 1000, gcash: 2000);
+
+        var created = await client.PostAsJsonAsync("/v1/transactions", new
+        {
+            method = "cash_in",
+            amount = 500,
+            profit = 10,
+            cashback = 1,
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        Assert.Equal(0, row.RootElement.GetProperty("cashback").GetDecimal());
+        Assert.Equal(0, row.RootElement.GetProperty("deltas").GetProperty("tpc").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Staff_can_update_load_via_tpc_cashback()
+    {
+        await using var factory = new ApiFactory();
+        var staff = factory.CreateClient();
+        await AuthorizeStaffAsync(staff, "tpc-edit@example.com", "tpcedit");
+
+        var created = await staff.PostAsJsonAsync("/v1/transactions", new
+        {
+            method = "load_via_tpc",
+            amount = 50,
+            profit = 5,
+            cashback = 0,
+            clientRequestId = Guid.NewGuid()
+        });
+        created.EnsureSuccessStatusCode();
+        using var row = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = row.RootElement.GetProperty("id").GetGuid();
+
+        var updated = await staff.PutAsJsonAsync($"/v1/transactions/{id}", new
+        {
+            method = "load_via_tpc",
+            amount = 50,
+            profit = 5,
+            cashback = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+        using var updatedRow = JsonDocument.Parse(await updated.Content.ReadAsStringAsync());
+        Assert.Equal(1, updatedRow.RootElement.GetProperty("cashback").GetDecimal());
+        Assert.Equal(-49, updatedRow.RootElement.GetProperty("deltas").GetProperty("tpc").GetDecimal());
+
+        var wallets = await staff.GetFromJsonAsync<JsonElement>("/v1/wallets");
+        Assert.Equal(-49, wallets.GetProperty("tpc").GetDecimal());
+    }
+
+    [Fact]
     public async Task Top_up_gcash_and_tpc_do_not_require_cash()
     {
         await using var factory = new ApiFactory();

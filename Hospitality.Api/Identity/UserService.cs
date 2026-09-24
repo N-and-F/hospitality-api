@@ -1,13 +1,15 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net.Mail;
 using Hospitality.Api.Auth;
+using Hospitality.Api.Ledger;
 using Microsoft.AspNetCore.Identity;
 
 namespace Hospitality.Api.Identity;
 
 public sealed class UserService(
     UserManager<IdentityUser> userManager,
-    JwtTokenService tokens)
+    JwtTokenService tokens,
+    WalletSetService wallets)
 {
     public async Task<(int Status, string? Code, string? Message, TokenResponse? Token)> RegisterAsync(
         RegisterRequest request)
@@ -36,6 +38,12 @@ public sealed class UserService(
 
         var user = await userManager.FindByNameAsync(request.Username.Trim())
             ?? throw new InvalidOperationException("User was created but could not be reloaded.");
+        var assigned = await wallets.AssignStaffAsync(user.Id, await wallets.GetMainIdAsync());
+        if (assigned.Code is not null)
+        {
+            return (assigned.Status, assigned.Code, assigned.Message, null);
+        }
+
         var roles = await userManager.GetRolesAsync(user);
         return (StatusCodes.Status200OK, null, null, new TokenResponse(tokens.Create(user, roles)));
     }
@@ -83,6 +91,11 @@ public sealed class UserService(
             return (StatusCodes.Status400BadRequest, "VALIDATION_ERROR", "Role must be Admin or Staff.", null);
         }
 
+        if (role == Roles.Staff && (request.WalletId is null || request.WalletId == Guid.Empty))
+        {
+            return (StatusCodes.Status400BadRequest, "WALLET_REQUIRED", "A wallet is required for Staff accounts.", null);
+        }
+
         var created = await CreateStaffUserAsync(request, role);
         if (!created.Succeeded)
         {
@@ -92,6 +105,15 @@ public sealed class UserService(
 
         var user = await userManager.FindByNameAsync(request.Username.Trim())
             ?? throw new InvalidOperationException("User was created but could not be reloaded.");
+        if (role == Roles.Staff)
+        {
+            var assigned = await wallets.AssignStaffAsync(user.Id, request.WalletId!.Value);
+            if (assigned.Code is not null)
+            {
+                return (assigned.Status, assigned.Code, assigned.Message, null);
+            }
+        }
+
         return (StatusCodes.Status200OK, null, null, await ToPublicDtoAsync(user));
     }
 
@@ -110,7 +132,8 @@ public sealed class UserService(
     public async Task<(int Status, string? Code, string? Message, UserPublicDto? User)> SetRoleAsync(
         string targetUserId,
         string requestedRole,
-        string actorUserId)
+        string actorUserId,
+        Guid? walletId)
     {
         var role = ParseRole(requestedRole, optional: false);
         if (role is null)
@@ -144,6 +167,11 @@ public sealed class UserService(
             return (StatusCodes.Status400BadRequest, "CANNOT_CHANGE_OWN_ROLE", "You cannot change your own role.", null);
         }
 
+        if (role == Roles.Staff && (walletId is null || walletId == Guid.Empty))
+        {
+            return (StatusCodes.Status400BadRequest, "WALLET_REQUIRED", "A wallet is required for Staff accounts.", null);
+        }
+
         if (currentRoles.Count > 0)
         {
             var removed = await userManager.RemoveFromRolesAsync(user, currentRoles);
@@ -159,6 +187,43 @@ public sealed class UserService(
         {
             var mapped = MapIdentityErrors(added);
             return (mapped.Status, mapped.Code, mapped.Message, null);
+        }
+
+        if (role == Roles.Admin)
+        {
+            await wallets.ClearAssignmentAsync(user.Id);
+        }
+        else
+        {
+            var assigned = await wallets.AssignStaffAsync(user.Id, walletId!.Value);
+            if (assigned.Code is not null)
+            {
+                return (assigned.Status, assigned.Code, assigned.Message, null);
+            }
+        }
+
+        return (StatusCodes.Status200OK, null, null, await ToPublicDtoAsync(user));
+    }
+
+    public async Task<(int Status, string? Code, string? Message, UserPublicDto? User)> SetWalletAsync(
+        string targetUserId,
+        Guid walletId)
+    {
+        var user = await userManager.FindByIdAsync(targetUserId);
+        if (user is null)
+        {
+            return (StatusCodes.Status404NotFound, "USER_NOT_FOUND", "That user was not found.", null);
+        }
+
+        if (!await userManager.IsInRoleAsync(user, Roles.Staff))
+        {
+            return (StatusCodes.Status400BadRequest, "VALIDATION_ERROR", "Only Staff can be assigned a wallet.", null);
+        }
+
+        var assigned = await wallets.AssignStaffAsync(user.Id, walletId);
+        if (assigned.Code is not null)
+        {
+            return (assigned.Status, assigned.Code, assigned.Message, null);
         }
 
         return (StatusCodes.Status200OK, null, null, await ToPublicDtoAsync(user));
@@ -205,7 +270,14 @@ public sealed class UserService(
     public async Task<UserPublicDto> ToPublicDtoAsync(IdentityUser user)
     {
         var roles = await userManager.GetRolesAsync(user);
-        return new UserPublicDto(user.Id, user.Email ?? "", user.UserName ?? "", [.. roles]);
+        var assignment = await wallets.GetAssignedWalletAsync(user.Id);
+        return new UserPublicDto(
+            user.Id,
+            user.Email ?? "",
+            user.UserName ?? "",
+            [.. roles],
+            assignment.Id,
+            assignment.Name);
     }
 
     private async Task<IdentityResult> CreateStaffUserAsync(RegisterRequest request, string roleName)

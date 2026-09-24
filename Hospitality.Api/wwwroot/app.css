@@ -167,8 +167,94 @@ h1, h2 {
 
 .brand {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.7rem;
+}
+
+.wallet-switch {
+  position: relative;
+  flex: 1 1 100%;
+}
+
+#wallet-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0.15rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(243, 230, 207, 0.22);
+  border-radius: 0.8rem;
+  background: rgba(243, 230, 207, 0.1);
+  color: var(--sidebar-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+#wallet-switch svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  opacity: 0.8;
+}
+
+#wallet-switch[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+#wallet-switch:focus {
+  outline: 2px solid rgba(243, 230, 207, 0.35);
+  border-color: var(--pill);
+}
+
+.wallet-switch-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0.35rem;
+  border: 1.5px solid var(--accent);
+  border-radius: 0.85rem;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.wallet-switch-menu button {
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+.wallet-switch-menu button.is-active,
+.wallet-switch-menu button:hover {
+  background: var(--pill);
+  color: var(--sidebar);
+}
+
+#wallet-label {
+  flex: 1 1 100%;
+  margin: 0.15rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(243, 230, 207, 0.22);
+  border-radius: 0.8rem;
+  background: rgba(243, 230, 207, 0.1);
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
 }
 
 .mark {
@@ -273,6 +359,10 @@ h1, h2 {
 .page:has([data-panel="history"]:not([hidden])) {
   width: 100%;
   max-width: none;
+}
+
+.page:has([data-settings-screen="users"]:not([hidden])) {
+  width: 75%;
 }
 
 .page:has([data-panel="settings"]:not([hidden])) #wallets {
@@ -619,7 +709,18 @@ input, select, button {
   font: inherit;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #fff;
+  background: var(--card);
+  color: var(--ink);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%231d6a52' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 0.95rem;
 }
 
 input:focus, select:focus {
@@ -1310,6 +1411,12 @@ button.ghost {
     justify-self: start;
     text-align: left;
   }
+
+  .account-table tr,
+  .account-table td {
+    background: var(--card);
+    text-align: left;
+  }
 }
 
 #txn-cancel {
@@ -1342,11 +1449,31 @@ button.ghost {
   padding: 1.25rem 0;
 }
 
-.account-list select {
+.account-table {
+  table-layout: fixed;
+}
+
+.account-table th,
+.account-table td {
+  background: var(--card);
+  text-align: center;
+}
+
+.account-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+.account-table select {
   width: auto;
-  min-width: 7.5rem;
-  margin: 0;
+  min-width: 6.5rem;
+  max-width: 100%;
+  margin: 0 auto;
   padding: 0.4rem 0.55rem;
+}
+
+.account-table td[data-label="Actions"] {
+  text-align: center;
+  white-space: nowrap;
 }
 
 .account-actions {
@@ -1424,6 +1551,10 @@ button.ghost {
 @media (max-width: 720px) {
   .content {
     padding: 1rem 0.85rem 1rem;
+  }
+
+  .page:has([data-settings-screen="users"]:not([hidden])) {
+    width: 100%;
   }
 
   [data-felogan-panel="stock"] {

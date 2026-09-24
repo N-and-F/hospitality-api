@@ -293,6 +293,10 @@ namespace Hospitality.Api.Data.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<decimal>("Cashback")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.Property<Guid>("ClientRequestId")
                         .HasColumnType("uuid");
 
@@ -337,6 +341,9 @@ namespace Hospitality.Api.Data.Migrations
                     b.Property<string>("VoidedByUserId")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ClientRequestId")
@@ -346,7 +353,24 @@ namespace Hospitality.Api.Data.Migrations
 
                     b.HasIndex("OccurredAt");
 
+                    b.HasIndex("WalletId");
+
                     b.ToTable("LedgerTransactions");
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.StaffWalletAssignment", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("WalletId");
+
+                    b.ToTable("StaffWalletAssignments");
                 });
 
             modelBuilder.Entity("Hospitality.Api.Data.WalletOpening", b =>
@@ -373,9 +397,37 @@ namespace Hospitality.Api.Data.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
+                    b.HasIndex("WalletId")
+                        .IsUnique();
+
                     b.ToTable("WalletOpenings");
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.WalletSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsMain")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Wallets", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -621,6 +673,33 @@ namespace Hospitality.Api.Data.Migrations
                     b.Navigation("MenuItem");
 
                     b.Navigation("Serving");
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.LedgerTransaction", b =>
+                {
+                    b.HasOne("Hospitality.Api.Data.WalletSet", null)
+                        .WithMany()
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.StaffWalletAssignment", b =>
+                {
+                    b.HasOne("Hospitality.Api.Data.WalletSet", null)
+                        .WithMany()
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Hospitality.Api.Data.WalletOpening", b =>
+                {
+                    b.HasOne("Hospitality.Api.Data.WalletSet", null)
+                        .WithMany()
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

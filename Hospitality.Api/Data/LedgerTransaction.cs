@@ -3,11 +3,13 @@ namespace Hospitality.Api.Data;
 public sealed class LedgerTransaction
 {
     public Guid Id { get; set; }
+    public Guid WalletId { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
     public required string Method { get; set; }
     public decimal Amount { get; set; }
     public decimal Profit { get; set; }
     public bool ProfitInGcash { get; set; }
+    public decimal Cashback { get; set; }
     public string? Note { get; set; }
     public required string InChargeUserId { get; set; }
     public decimal DeltaCashOnHand { get; set; }

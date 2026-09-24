@@ -8,9 +8,9 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
 {
     public static readonly TimeZoneInfo Manila = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
 
-    public async Task<WalletDto> GetWalletsAsync(CancellationToken cancellationToken = default)
+    public async Task<WalletDto> GetWalletsAsync(Guid walletId, CancellationToken cancellationToken = default)
     {
-        var wallets = await CurrentWalletsAsync(cancellationToken);
+        var wallets = await CurrentWalletsAsync(walletId, cancellationToken);
         return ToDto(wallets);
     }
 
@@ -27,6 +27,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
     public async Task<(int Status, string? Code, string? Message, TransactionDto? Value)> CreateAsync(
         CreateTransactionRequest request,
         string userId,
+        Guid walletId,
         CancellationToken cancellationToken = default)
     {
         if (request.ClientRequestId is null || request.ClientRequestId == Guid.Empty)
@@ -47,6 +48,11 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         if (request.Profit is < 0 || (request.Profit is { } postedProfit && HasExtraDecimals(postedProfit)))
         {
             return (400, "VALIDATION_ERROR", "Profit cannot be negative and must have at most 2 decimal places.", null);
+        }
+
+        if (request.Cashback is < 0 || (request.Cashback is { } postedCashback && HasExtraDecimals(postedCashback)))
+        {
+            return (400, "VALIDATION_ERROR", "Cashback cannot be negative and must have at most 2 decimal places.", null);
         }
 
         if (request.Note is { Length: > 200 })
@@ -71,8 +77,9 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             ? 0
             : request.Profit ?? ProfitSuggestion.For(request.Method, request.Amount);
         var profitInGcash = appliedProfit > 0 && request.ProfitInGcash;
-        var deltas = WalletMath.Deltas(request.Method, request.Amount, appliedProfit, profitInGcash);
-        var current = await CurrentWalletsAsync(cancellationToken);
+        var appliedCashback = AppliedCashback(request.Method, request.Cashback);
+        var deltas = WalletMath.Deltas(request.Method, request.Amount, appliedProfit, profitInGcash, appliedCashback);
+        var current = await CurrentWalletsAsync(walletId, cancellationToken);
         if (WalletMath.MakesCashOrGcashNegative(current, deltas))
         {
             return (409, "INSUFFICIENT_WALLET", "This transaction would make cash on hand or GCash negative.", null);
@@ -88,8 +95,10 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             Amount = decimal.Round(request.Amount, 2),
             Profit = decimal.Round(appliedProfit, 2),
             ProfitInGcash = profitInGcash,
+            Cashback = decimal.Round(appliedCashback, 2),
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             InChargeUserId = userId,
+            WalletId = walletId,
             DeltaCashOnHand = deltas.CashOnHand,
             DeltaGcash = deltas.Gcash,
             DeltaTpc = deltas.Tpc,
@@ -124,10 +133,11 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         UpdateTransactionRequest request,
         string userId,
         bool isAdmin,
+        Guid walletId,
         CancellationToken cancellationToken = default)
     {
         var row = await db.LedgerTransactions.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
-        if (row is null)
+        if (row is null || row.WalletId != walletId)
         {
             return (404, "TRANSACTION_NOT_FOUND", "Transaction was not found.", null);
         }
@@ -152,6 +162,11 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             return (400, "VALIDATION_ERROR", "Profit cannot be negative and must have at most 2 decimal places.", null);
         }
 
+        if (request.Cashback is < 0 || (request.Cashback is { } postedCashback && HasExtraDecimals(postedCashback)))
+        {
+            return (400, "VALIDATION_ERROR", "Cashback cannot be negative and must have at most 2 decimal places.", null);
+        }
+
         if (request.Note is { Length: > 200 })
         {
             return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
@@ -161,8 +176,9 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             ? 0
             : request.Profit ?? ProfitSuggestion.For(request.Method, request.Amount);
         var profitInGcash = appliedProfit > 0 && request.ProfitInGcash;
-        var newDeltas = WalletMath.Deltas(request.Method, request.Amount, appliedProfit, profitInGcash);
-        var current = await CurrentWalletsAsync(cancellationToken);
+        var appliedCashback = AppliedCashback(request.Method, request.Cashback);
+        var newDeltas = WalletMath.Deltas(request.Method, request.Amount, appliedProfit, profitInGcash, appliedCashback);
+        var current = await CurrentWalletsAsync(walletId, cancellationToken);
         var without = current.Add(new WalletAmounts(-row.DeltaCashOnHand, -row.DeltaGcash, -row.DeltaTpc));
         if (WalletMath.MakesCashOrGcashNegative(without, newDeltas))
         {
@@ -174,6 +190,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         row.Amount = decimal.Round(request.Amount, 2);
         row.Profit = decimal.Round(appliedProfit, 2);
         row.ProfitInGcash = profitInGcash;
+        row.Cashback = decimal.Round(appliedCashback, 2);
         row.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         row.DeltaCashOnHand = newDeltas.CashOnHand;
         row.DeltaGcash = newDeltas.Gcash;
@@ -194,10 +211,11 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         Guid id,
         string userId,
         bool isAdmin,
+        Guid walletId,
         CancellationToken cancellationToken = default)
     {
         var row = await db.LedgerTransactions.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
-        if (row is null)
+        if (row is null || row.WalletId != walletId)
         {
             return (404, "TRANSACTION_NOT_FOUND", "Transaction was not found.");
         }
@@ -218,6 +236,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         string userId,
         bool isAdmin,
         bool includeVoided,
+        Guid walletId,
         CancellationToken cancellationToken = default)
     {
         if (!DateOnly.TryParse(date, out var day))
@@ -237,7 +256,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         var end = TimeZoneInfo.ConvertTimeToUtc(exclusiveEnd.ToDateTime(TimeOnly.MinValue), Manila);
 
         var query = db.LedgerTransactions.AsNoTracking()
-            .Where(t => t.OccurredAt >= start && t.OccurredAt < end);
+            .Where(t => t.WalletId == walletId && t.OccurredAt >= start && t.OccurredAt < end);
 
         if (!isAdmin)
         {
@@ -271,7 +290,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             period,
             items,
             totals,
-            await GetWalletsAsync(cancellationToken)));
+            await GetWalletsAsync(walletId, cancellationToken)));
     }
 
     private static (DateOnly From, DateOnly ExclusiveEnd) PeriodBounds(DateOnly day, string range) =>
@@ -292,10 +311,11 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
     public async Task<(int Status, string? Code, string? Message)> VoidAsync(
         Guid id,
         string adminUserId,
+        Guid walletId,
         CancellationToken cancellationToken = default)
     {
         var row = await db.LedgerTransactions.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
-        if (row is null)
+        if (row is null || row.WalletId != walletId)
         {
             return (404, "TRANSACTION_NOT_FOUND", "Transaction was not found.");
         }
@@ -314,6 +334,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
     public async Task<(int Status, string? Code, string? Message, WalletDto? Value)> SetOpeningAsync(
         SetOpeningRequest request,
         string adminUserId,
+        Guid walletId,
         CancellationToken cancellationToken = default)
     {
         if (HasExtraDecimals(request.CashOnHand) || HasExtraDecimals(request.Gcash) || HasExtraDecimals(request.Tpc))
@@ -322,17 +343,17 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         }
 
         var posted = await db.LedgerTransactions.AsNoTracking()
-            .Where(t => t.VoidedAt == null)
+            .Where(t => t.WalletId == walletId && t.VoidedAt == null)
             .Select(t => new { t.DeltaCashOnHand, t.DeltaGcash, t.DeltaTpc })
             .ToListAsync(cancellationToken);
         var postedCash = posted.Sum(t => t.DeltaCashOnHand);
         var postedGcash = posted.Sum(t => t.DeltaGcash);
         var postedTpc = posted.Sum(t => t.DeltaTpc);
 
-        var opening = await db.WalletOpenings.OrderBy(o => o.SetAt).FirstOrDefaultAsync(cancellationToken);
+        var opening = await db.WalletOpenings.FirstOrDefaultAsync(o => o.WalletId == walletId, cancellationToken);
         if (opening is null)
         {
-            opening = new WalletOpening { Id = Guid.NewGuid() };
+            opening = new WalletOpening { Id = Guid.NewGuid(), WalletId = walletId };
             db.WalletOpenings.Add(opening);
         }
 
@@ -342,18 +363,19 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         opening.SetAt = DateTimeOffset.UtcNow;
         opening.SetByUserId = adminUserId;
         await db.SaveChangesAsync(cancellationToken);
-        return (200, null, null, await GetWalletsAsync(cancellationToken));
+        return (200, null, null, await GetWalletsAsync(walletId, cancellationToken));
     }
 
-    private async Task<WalletAmounts> CurrentWalletsAsync(CancellationToken cancellationToken)
+    private async Task<WalletAmounts> CurrentWalletsAsync(Guid walletId, CancellationToken cancellationToken)
     {
-        var opening = await db.WalletOpenings.AsNoTracking().OrderBy(o => o.SetAt).FirstOrDefaultAsync(cancellationToken);
+        var opening = await db.WalletOpenings.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.WalletId == walletId, cancellationToken);
         var baseAmounts = opening is null
             ? WalletAmounts.Zero
             : new WalletAmounts(opening.CashOnHand, opening.Gcash, opening.Tpc);
 
         var posted = await db.LedgerTransactions.AsNoTracking()
-            .Where(t => t.VoidedAt == null)
+            .Where(t => t.WalletId == walletId && t.VoidedAt == null)
             .Select(t => new { t.DeltaCashOnHand, t.DeltaGcash, t.DeltaTpc })
             .ToListAsync(cancellationToken);
 
@@ -378,6 +400,7 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             row.Amount,
             row.Profit,
             row.ProfitInGcash,
+            row.Cashback,
             row.Note,
             new InChargeDto(row.InChargeUserId, user?.UserName ?? ""),
             new WalletDto(row.DeltaCashOnHand, row.DeltaGcash, row.DeltaTpc),
@@ -390,6 +413,9 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         new(wallets.CashOnHand, wallets.Gcash, wallets.Tpc);
 
     private static bool HasExtraDecimals(decimal value) => decimal.Round(value, 2) != value;
+
+    private static decimal AppliedCashback(string method, decimal? cashback) =>
+        method == TransactionMethods.LoadViaTpc ? cashback ?? 0 : 0;
 
     private static string SuggestionRule(string method) => method switch
     {

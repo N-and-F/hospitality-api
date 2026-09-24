@@ -2,7 +2,12 @@ namespace Hospitality.Api.Ledger;
 
 public static class WalletMath
 {
-    public static WalletAmounts Deltas(string method, decimal amount, decimal profit, bool profitInGcash)
+    public static WalletAmounts Deltas(
+        string method,
+        decimal amount,
+        decimal profit,
+        bool profitInGcash,
+        decimal cashback = 0)
     {
         if (TransactionMethods.ForcesZeroProfit.Contains(method))
         {
@@ -18,7 +23,7 @@ public static class WalletMath
             TransactionMethods.CashOut => new(-amount + feeCash, amount + feeGcash, 0),
             TransactionMethods.CashOutWithCharge => new(-amount + feeCash, amount + feeGcash, 0),
             TransactionMethods.LoadViaGcash => new(amount + feeCash, -amount + feeGcash, 0),
-            TransactionMethods.LoadViaTpc => new(amount + feeCash, feeGcash, -amount),
+            TransactionMethods.LoadViaTpc => new(amount + feeCash, feeGcash, -amount + cashback),
             TransactionMethods.TopUpGcash => new(0, amount, 0),
             TransactionMethods.TopUpTpc => new(0, 0, amount),
             TransactionMethods.AddCashCapital => new(amount, 0, 0),

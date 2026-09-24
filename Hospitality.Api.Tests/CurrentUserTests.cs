@@ -44,5 +44,6 @@ public sealed class CurrentUserTests(ApiFactory factory) : IClassFixture<ApiFact
             .Cast<string>()
             .ToArray();
         Assert.Equal(new[] { "Staff" }, roles);
+        Assert.Equal("Main", doc.RootElement.GetProperty("assignedWalletName").GetString());
     }
 }

@@ -38,4 +38,13 @@ public sealed class WalletMathTests
         Assert.Equal(0, deltas.Gcash);
         Assert.Equal(400, deltas.Tpc);
     }
+
+    [Fact]
+    public void Load_via_tpc_cashback_credits_tpc()
+    {
+        var deltas = WalletMath.Deltas(TransactionMethods.LoadViaTpc, 50, 5, profitInGcash: false, cashback: 1);
+        Assert.Equal(55, deltas.CashOnHand);
+        Assert.Equal(0, deltas.Gcash);
+        Assert.Equal(-49, deltas.Tpc);
+    }
 }

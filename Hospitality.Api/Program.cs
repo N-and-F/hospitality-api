@@ -88,8 +88,10 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<LedgerService>();
+builder.Services.AddScoped<WalletSetService>();
 builder.Services.AddScoped<FeloganService>();
 builder.Services.AddHostedService<IdentitySeedHostedService>();
+builder.Services.AddHostedService<WalletSetSeedHostedService>();
 builder.Services.AddHostedService<FeloganSeedHostedService>();
 
 var port = Environment.GetEnvironmentVariable("PORT");
@@ -118,6 +120,7 @@ var v1 = app.MapGroup("/v1");
 v1.MapAuthEndpoints();
 v1.MapCurrentUserEndpoints();
 v1.MapStaffEndpoints();
+v1.MapWalletSetEndpoints();
 v1.MapLedgerEndpoints();
 v1.MapFeloganEndpoints();
 

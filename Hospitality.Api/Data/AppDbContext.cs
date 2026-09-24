@@ -8,6 +8,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
 {
     public DbSet<LedgerTransaction> LedgerTransactions => Set<LedgerTransaction>();
     public DbSet<WalletOpening> WalletOpenings => Set<WalletOpening>();
+    public DbSet<WalletSet> WalletSets => Set<WalletSet>();
+    public DbSet<StaffWalletAssignment> StaffWalletAssignments => Set<StaffWalletAssignment>();
     public DbSet<FeloganRoom> FeloganRooms => Set<FeloganRoom>();
     public DbSet<FeloganCook> FeloganCooks => Set<FeloganCook>();
     public DbSet<FeloganMenuItem> FeloganMenuItems => Set<FeloganMenuItem>();
@@ -27,6 +29,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.HasIndex(x => x.InChargeUserId);
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.Property(x => x.Profit).HasPrecision(18, 2);
+            entity.Property(x => x.Cashback).HasPrecision(18, 2);
             entity.Property(x => x.DeltaCashOnHand).HasPrecision(18, 2);
             entity.Property(x => x.DeltaGcash).HasPrecision(18, 2);
             entity.Property(x => x.DeltaTpc).HasPrecision(18, 2);
@@ -35,6 +38,26 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.Property(x => x.BalanceAfterTpc).HasPrecision(18, 2);
             entity.Property(x => x.Method).HasMaxLength(64);
             entity.Property(x => x.Note).HasMaxLength(200);
+            entity.HasIndex(x => x.WalletId);
+            entity.HasOne<WalletSet>()
+                .WithMany()
+                .HasForeignKey(x => x.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<WalletSet>(entity =>
+        {
+            entity.ToTable("Wallets");
+            entity.Property(x => x.Name).HasMaxLength(32).IsRequired();
+        });
+
+        builder.Entity<StaffWalletAssignment>(entity =>
+        {
+            entity.HasKey(x => x.UserId);
+            entity.HasOne<WalletSet>()
+                .WithMany()
+                .HasForeignKey(x => x.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<WalletOpening>(entity =>
@@ -42,6 +65,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.Property(x => x.CashOnHand).HasPrecision(18, 2);
             entity.Property(x => x.Gcash).HasPrecision(18, 2);
             entity.Property(x => x.Tpc).HasPrecision(18, 2);
+            entity.HasIndex(x => x.WalletId).IsUnique();
+            entity.HasOne<WalletSet>()
+                .WithMany()
+                .HasForeignKey(x => x.WalletId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<FeloganRoom>(entity =>

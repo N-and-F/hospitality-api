@@ -38,7 +38,8 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             email = "newstaff@example.com",
             username = "newstaff",
-            password = "StaffPass1!"
+            password = "StaffPass1!",
+            walletId = await MainWalletIdAsync(client)
         });
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
@@ -65,7 +66,8 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var created = await client.PostAsJsonAsync("/v1/staff", new
         {
             username = "noemail",
-            password = "StaffPass1!"
+            password = "StaffPass1!",
+            walletId = await MainWalletIdAsync(client)
         });
 
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
@@ -83,7 +85,8 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var created = await client.PostAsJsonAsync("/v1/staff", new
         {
             username = "simplepass",
-            password = "counter"
+            password = "counter",
+            walletId = await MainWalletIdAsync(client)
         });
 
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
@@ -118,7 +121,8 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             email = "promoteme@example.com",
             username = "promoteme",
-            password = "StaffPass1!"
+            password = "StaffPass1!",
+            walletId = await MainWalletIdAsync(client)
         });
         created.EnsureSuccessStatusCode();
         using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
@@ -182,7 +186,8 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var created = await client.PostAsJsonAsync("/v1/staff", new
         {
             username = "deleteme",
-            password = "StaffPass1!"
+            password = "StaffPass1!",
+            walletId = await MainWalletIdAsync(client)
         });
         created.EnsureSuccessStatusCode();
         using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
@@ -224,7 +229,8 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var created = await adminClient.PostAsJsonAsync("/v1/staff", new
         {
             username = "keepme",
-            password = "StaffPass1!"
+            password = "StaffPass1!",
+            walletId = await MainWalletIdAsync(adminClient)
         });
         created.EnsureSuccessStatusCode();
         using var createdDoc = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
@@ -265,6 +271,14 @@ public sealed class StaffTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var tokenDoc = JsonDocument.Parse(await login.Content.ReadAsStringAsync());
         var token = tokenDoc.RootElement.GetProperty("access_token").GetString();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }
+
+    private static async Task<Guid> MainWalletIdAsync(HttpClient client)
+    {
+        var sets = await client.GetFromJsonAsync<JsonElement>("/v1/wallet-sets");
+        return sets.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "Main")
+            .GetProperty("id").GetGuid();
     }
 
     private static async Task<string> RegisterAsync(HttpClient client, string email, string username)

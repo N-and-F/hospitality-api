@@ -6,6 +6,7 @@ public sealed class WalletOpening
     public decimal CashOnHand { get; set; }
     public decimal Gcash { get; set; }
     public decimal Tpc { get; set; }
+    public Guid WalletId { get; set; }
     public DateTimeOffset SetAt { get; set; }
     public string? SetByUserId { get; set; }
 }

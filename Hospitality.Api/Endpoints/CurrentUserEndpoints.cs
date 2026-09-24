@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Hospitality.Api.Common;
 using Hospitality.Api.Identity;
+using Hospitality.Api.Ledger;
 
 namespace Hospitality.Api.Endpoints;
 
@@ -38,13 +39,28 @@ public static class CurrentUserEndpoints
                 return ApiResults.Unauthorized(http);
             }
 
-            var result = await users.SetRoleAsync(id, request.Role, actorId);
+            var result = await users.SetRoleAsync(id, request.Role, actorId, request.WalletId);
             return result.User is not null
                 ? Results.Ok(result.User)
                 : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
         })
             .RequireAuthorization(policy => policy.RequireRole(Roles.Admin))
             .WithName("SetUserRole")
+            .WithTags("Staff");
+
+        group.MapPatch("/users/{id}/wallet", async (
+            string id,
+            SetWalletRequest request,
+            UserService users,
+            HttpContext http) =>
+        {
+            var result = await users.SetWalletAsync(id, request.WalletId);
+            return result.User is not null
+                ? Results.Ok(result.User)
+                : ApiResults.Error(http, result.Status, result.Code!, result.Message!);
+        })
+            .RequireAuthorization(policy => policy.RequireRole(Roles.Admin))
+            .WithName("SetUserWallet")
             .WithTags("Staff");
 
         group.MapDelete("/users/{id}", async (

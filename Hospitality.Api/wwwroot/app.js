@@ -1,5 +1,6 @@
 const tokenKey = "hospitality.token";
 const appKey = "hospitality.app";
+const walletKey = "hospitality.walletId";
 
 const loginView = document.getElementById("login-view");
 const chooserView = document.getElementById("chooser-view");
@@ -26,6 +27,9 @@ const adminSettings = document.getElementById("admin-settings");
 const settingsMenu = document.querySelector("[data-settings-menu]");
 
 let currentUser = null;
+let walletSets = [];
+let activeWalletId = "";
+let editingWalletId = null;
 let pendingDelete = null;
 const deleteModal = document.getElementById("delete-modal");
 const deleteError = document.getElementById("delete-error");
@@ -37,6 +41,65 @@ function token() {
 
 function isAdmin() {
   return (currentUser?.roles || []).includes("Admin");
+}
+
+function ledgerQuery(path) {
+  const url = new URL(path, window.location.origin);
+  if (isAdmin() && activeWalletId) {
+    url.searchParams.set("walletId", activeWalletId);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function mainWallet() {
+  return walletSets.find((wallet) => wallet.isMain) || walletSets[0];
+}
+
+function walletOptions(selectedId) {
+  return walletSets.map((wallet) =>
+    `<option value="${wallet.id}" ${wallet.id === selectedId ? "selected" : ""}>${escapeHtml(wallet.name)}</option>`
+  ).join("");
+}
+
+async function loadWalletSets() {
+  const data = await api("/v1/wallet-sets");
+  walletSets = data.items || [];
+}
+
+function applyWalletChrome() {
+  const wrap = document.querySelector(".wallet-switch");
+  const trigger = document.getElementById("wallet-switch");
+  const copy = document.getElementById("wallet-switch-copy");
+  const menu = document.getElementById("wallet-switch-menu");
+  const label = document.getElementById("wallet-label");
+  if (isAdmin()) {
+    label.hidden = true;
+    wrap.hidden = false;
+    const stored = sessionStorage.getItem(walletKey);
+    const match = walletSets.find((wallet) => wallet.id === stored) || mainWallet();
+    activeWalletId = match?.id || "";
+    if (activeWalletId) {
+      sessionStorage.setItem(walletKey, activeWalletId);
+    }
+    copy.textContent = match?.name || "Wallet";
+    menu.innerHTML = walletSets.map((wallet) =>
+      `<button type="button" role="option" data-wallet-id="${wallet.id}" class="${wallet.id === activeWalletId ? "is-active" : ""}">${escapeHtml(wallet.name)}</button>`
+    ).join("");
+    return;
+  }
+
+  wrap.hidden = true;
+  closeWalletMenu();
+  label.hidden = false;
+  label.textContent = currentUser?.assignedWalletName || "";
+  activeWalletId = currentUser?.assignedWalletId || "";
+}
+
+function closeWalletMenu() {
+  const trigger = document.getElementById("wallet-switch");
+  const menu = document.getElementById("wallet-switch-menu");
+  trigger.setAttribute("aria-expanded", "false");
+  menu.hidden = true;
 }
 
 function deleteButton(attrs) {
@@ -146,6 +209,12 @@ function updateProfitHint() {
   const amount = Number(document.getElementById("amount").value);
   const suggested = suggestedProfit(methodSelect.value, amount);
   profit.placeholder = suggested === null ? "" : String(suggested);
+  const cashbackField = document.getElementById("cashback-field");
+  const isTpcLoad = methodSelect.value === "load_via_tpc";
+  cashbackField.hidden = !isTpcLoad;
+  if (!isTpcLoad) {
+    document.getElementById("cashback").value = "";
+  }
 }
 
 async function api(path, options = {}) {
@@ -177,6 +246,7 @@ async function signIn(username, password) {
 function signOut() {
   sessionStorage.removeItem(tokenKey);
   sessionStorage.removeItem(appKey);
+  sessionStorage.removeItem(walletKey);
   currentUser = null;
   loginView.hidden = false;
   chooserView.hidden = true;
@@ -206,6 +276,13 @@ function showSettingsScreen(name) {
   }
   if (name === "opening") {
     fillOpeningWallets();
+  }
+  if (name === "wallets") {
+    renderWalletSets().catch((error) => showError(document.getElementById("wallet-sets-error"), error.message));
+  }
+  if (name === "account") {
+    fillAccountWallets();
+    syncAccountWalletField();
   }
 }
 
@@ -246,6 +323,9 @@ async function loadApp() {
   const txnDate = document.getElementById("txn-date");
   txnDate.value = manilaDate();
   txnDate.max = manilaDate();
+
+  await loadWalletSets();
+  applyWalletChrome();
 
   const methods = await api("/v1/transaction-methods");
   methodLabels = Object.fromEntries((methods.items || []).map((item) => [item.method, item.label]));
@@ -289,8 +369,8 @@ async function routeAuthenticatedUser(fromLogin = false) {
 async function refreshLedger() {
   const date = selectedDate();
   const [wallets, list] = await Promise.all([
-    api("/v1/wallets"),
-    api(`/v1/transactions?date=${date}&range=${historyRange}`)
+    api(ledgerQuery("/v1/wallets")),
+    api(ledgerQuery(`/v1/transactions?date=${date}&range=${historyRange}`))
   ]);
 
   lastWallets = wallets;
@@ -350,6 +430,9 @@ async function refreshLedger() {
               minute: "2-digit"
             });
             const profit = `${peso(row.profit)}${row.profitInGcash ? " · GCash" : ""}`;
+            const amount = row.cashback > 0
+              ? `${peso(row.amount)} · CB ${peso(row.cashback)}`
+              : peso(row.amount);
             const deleteBtn = isAdmin()
               ? deleteButton(`data-delete="${row.id}"`)
               : "";
@@ -357,7 +440,7 @@ async function refreshLedger() {
               <td data-label="Date">${date}</td>
               <td data-label="Time">${time}</td>
               <td data-label="Service">${escapeHtml(serviceLabel(row.method))}</td>
-              <td data-label="Amount" class="num">${peso(row.amount)}</td>
+              <td data-label="Amount" class="num">${amount}</td>
               <td data-label="Profit" class="num">${profit}</td>
               <td data-label="In charge">${escapeHtml(row.inCharge.username)}</td>
               <td data-label="Note">${row.note
@@ -408,6 +491,7 @@ function startEdit(row) {
   document.getElementById("amount").value = row.amount;
   document.getElementById("profit").value = row.profit;
   document.getElementById("profit-gcash").checked = row.profitInGcash;
+  document.getElementById("cashback").value = row.cashback || "";
   document.getElementById("note").value = row.note || "";
   updateProfitHint();
   showPanel("txn");
@@ -420,23 +504,39 @@ async function loadUsers() {
   const items = data.items || [];
   const added = items.filter((user) => user.id !== currentUser?.id);
   if (added.length === 0) {
-    users.innerHTML = `<li class="muted empty">No accounts yet.</li>`;
+    users.innerHTML = `<p class="muted history-empty">No accounts yet.</p>`;
     return;
   }
 
-  users.innerHTML = added.map((user) => {
-    const role = (user.roles || [])[0] || "Staff";
-    return `<li>
-      <span>${escapeHtml(user.username)}</span>
-      <span class="account-actions">
-        <select data-user-id="${user.id}">
-          <option value="Staff" ${role === "Staff" ? "selected" : ""}>Staff</option>
-          <option value="Admin" ${role === "Admin" ? "selected" : ""}>Admin</option>
-        </select>
-        ${deleteButton(`data-delete-user="${user.id}" data-username="${escapeHtml(user.username)}"`)}
-      </span>
-    </li>`;
-  }).join("");
+  users.innerHTML = `<table class="history-table account-table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Wallet</th>
+        <th>Role</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${added.map((user) => {
+        const role = (user.roles || [])[0] || "Staff";
+        const walletCell = role === "Staff"
+          ? `<select data-user-wallet="${user.id}">${walletOptions(user.assignedWalletId)}</select>`
+          : `<span class="muted">—</span>`;
+        return `<tr>
+          <td data-label="Username">${escapeHtml(user.username)}</td>
+          <td data-label="Wallet">${walletCell}</td>
+          <td data-label="Role">
+            <select data-user-id="${user.id}">
+              <option value="Staff" ${role === "Staff" ? "selected" : ""}>Staff</option>
+              <option value="Admin" ${role === "Admin" ? "selected" : ""}>Admin</option>
+            </select>
+          </td>
+          <td data-label="Actions">${deleteButton(`data-delete-user="${user.id}" data-username="${escapeHtml(user.username)}"`)}</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>`;
 }
 
 loginForm.addEventListener("submit", async (event) => {
@@ -538,12 +638,16 @@ txnForm.addEventListener("submit", async (event) => {
   if (profitRaw !== "") {
     body.profit = Number(profitRaw);
   }
+  if (methodSelect.value === "load_via_tpc") {
+    const cashbackRaw = document.getElementById("cashback").value;
+    body.cashback = cashbackRaw === "" ? 0 : Number(cashbackRaw);
+  }
   try {
     const wasEdit = Boolean(editingId);
     if (editingId) {
-      await api(`/v1/transactions/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
+      await api(ledgerQuery(`/v1/transactions/${editingId}`), { method: "PUT", body: JSON.stringify(body) });
     } else {
-      await api("/v1/transactions", { method: "POST", body: JSON.stringify(body) });
+      await api(ledgerQuery("/v1/transactions"), { method: "POST", body: JSON.stringify(body) });
     }
     txnForm.reset();
     setEditing(null);
@@ -692,7 +796,7 @@ deleteConfirm.addEventListener("click", async () => {
       return;
     }
 
-    await api(`/v1/transactions/${pendingDelete.id}`, { method: "DELETE" });
+    await api(ledgerQuery(`/v1/transactions/${pendingDelete.id}`), { method: "DELETE" });
     closeDeleteModal();
     await refreshLedger();
   } catch (error) {
@@ -706,7 +810,7 @@ openingForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   showError(openingError, "");
   try {
-    await api("/v1/wallets/opening", {
+    await api(ledgerQuery("/v1/wallets/opening"), {
       method: "PUT",
       body: JSON.stringify({
         cashOnHand: Number(document.getElementById("open-cash").value),
@@ -732,7 +836,10 @@ accountForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         username: document.getElementById("account-username").value.trim(),
         password: document.getElementById("account-password").value,
-        role: document.getElementById("account-role").value
+        role: document.getElementById("account-role").value,
+        ...(document.getElementById("account-role").value === "Staff"
+          ? { walletId: document.getElementById("account-wallet").value }
+          : {})
       })
     });
     accountForm.reset();
@@ -759,21 +866,36 @@ document.getElementById("users").addEventListener("click", (event) => {
 });
 
 document.getElementById("users").addEventListener("change", async (event) => {
-  const select = event.target.closest("select[data-user-id]");
-  if (!select) {
-    return;
-  }
-
+  const walletSelect = event.target.closest("select[data-user-wallet]");
+  const roleSelect = event.target.closest("select[data-user-id]");
   const errorEl = document.getElementById("users-error");
   showError(errorEl, "");
   try {
-    await api(`/v1/users/${select.dataset.userId}/role`, {
+    if (walletSelect) {
+      await api(`/v1/users/${walletSelect.dataset.userWallet}/wallet`, {
+        method: "PATCH",
+        body: JSON.stringify({ walletId: walletSelect.value })
+      });
+      showToast("Wallet assigned.");
+      await loadUsers();
+      return;
+    }
+    if (!roleSelect) {
+      return;
+    }
+    const body = { role: roleSelect.value };
+    if (roleSelect.value === "Staff") {
+      const assigned = roleSelect.closest("tr")?.querySelector("select[data-user-wallet]");
+      body.walletId = assigned?.value || mainWallet()?.id;
+    }
+    await api(`/v1/users/${roleSelect.dataset.userId}/role`, {
       method: "PATCH",
-      body: JSON.stringify({ role: select.value })
+      body: JSON.stringify(body)
     });
     await loadUsers();
   } catch (error) {
     showError(errorEl, error.message);
+    showToast(error.message, "error");
     loadUsers().catch(() => {});
   }
 });
@@ -801,6 +923,142 @@ document.querySelectorAll("[data-password-toggle]").forEach((button) => {
     button.querySelector(".eye-open").hidden = show;
     button.querySelector(".eye-shut").hidden = !show;
   });
+});
+
+function fillAccountWallets() {
+  const select = document.getElementById("account-wallet");
+  select.innerHTML = walletOptions(select.value || mainWallet()?.id || "");
+}
+
+function syncAccountWalletField() {
+  const staff = document.getElementById("account-role").value === "Staff";
+  document.getElementById("account-wallet-field").hidden = !staff;
+  document.getElementById("account-wallet").required = staff;
+}
+
+function resetWalletSetForm() {
+  editingWalletId = null;
+  document.getElementById("wallet-set-form").reset();
+  document.getElementById("wallet-set-save").textContent = "Add wallet";
+  document.getElementById("wallet-set-cancel").hidden = true;
+}
+
+async function renderWalletSets() {
+  showError(document.getElementById("wallet-sets-error"), "");
+  await loadWalletSets();
+  applyWalletChrome();
+  fillAccountWallets();
+  const list = document.getElementById("wallet-sets-list");
+  if (!walletSets.length) {
+    list.innerHTML = `<p class="muted">No wallets yet.</p>`;
+    return;
+  }
+  list.innerHTML = walletSets.map((wallet) => `<div class="item">
+    <b>${escapeHtml(wallet.name)}</b>
+    <div class="item-actions">
+      <button type="button" class="text-link" data-wallet-edit="${wallet.id}">Edit</button>
+      ${wallet.isMain ? "" : `<button type="button" class="text-link danger" data-wallet-delete="${wallet.id}">Delete</button>`}
+    </div>
+  </div>`).join("");
+}
+
+document.getElementById("wallet-switch").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const trigger = event.currentTarget;
+  const menu = document.getElementById("wallet-switch-menu");
+  const open = menu.hidden;
+  trigger.setAttribute("aria-expanded", open ? "true" : "false");
+  menu.hidden = !open;
+});
+
+document.getElementById("wallet-switch-menu").addEventListener("click", async (event) => {
+  const option = event.target.closest("[data-wallet-id]");
+  if (!option) {
+    return;
+  }
+  activeWalletId = option.dataset.walletId;
+  sessionStorage.setItem(walletKey, activeWalletId);
+  closeWalletMenu();
+  applyWalletChrome();
+  try {
+    await refreshLedger();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".wallet-switch")) {
+    closeWalletMenu();
+  }
+});
+
+document.getElementById("account-role").addEventListener("change", syncAccountWalletField);
+
+document.getElementById("wallet-set-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById("wallet-sets-error");
+  showError(errorEl, "");
+  const name = document.getElementById("wallet-set-name").value.trim();
+  try {
+    if (editingWalletId) {
+      await api(`/v1/wallet-sets/${editingWalletId}`, {
+        method: "PUT",
+        body: JSON.stringify({ name })
+      });
+      showToast("Wallet updated.");
+    } else {
+      await api("/v1/wallet-sets", {
+        method: "POST",
+        body: JSON.stringify({ name })
+      });
+      showToast("Wallet saved.");
+    }
+    resetWalletSetForm();
+    await renderWalletSets();
+  } catch (error) {
+    showError(errorEl, error.message);
+    showToast(error.message, "error");
+  }
+});
+
+document.getElementById("wallet-set-cancel").addEventListener("click", () => {
+  resetWalletSetForm();
+  showError(document.getElementById("wallet-sets-error"), "");
+});
+
+document.getElementById("wallet-sets-list").addEventListener("click", async (event) => {
+  const edit = event.target.closest("[data-wallet-edit]");
+  const remove = event.target.closest("[data-wallet-delete]");
+  if (edit) {
+    const wallet = walletSets.find((item) => item.id === edit.dataset.walletEdit);
+    if (!wallet) {
+      return;
+    }
+    editingWalletId = wallet.id;
+    document.getElementById("wallet-set-name").value = wallet.name;
+    document.getElementById("wallet-set-save").textContent = "Save changes";
+    document.getElementById("wallet-set-cancel").hidden = false;
+    return;
+  }
+  if (!remove) {
+    return;
+  }
+  const errorEl = document.getElementById("wallet-sets-error");
+  showError(errorEl, "");
+  try {
+    await api(`/v1/wallet-sets/${remove.dataset.walletDelete}`, { method: "DELETE" });
+    if (activeWalletId === remove.dataset.walletDelete) {
+      sessionStorage.removeItem(walletKey);
+    }
+    showToast("Wallet deleted.");
+    resetWalletSetForm();
+    await renderWalletSets();
+    await refreshLedger();
+  } catch (error) {
+    showError(errorEl, error.message);
+    showToast(error.message, "error");
+  }
 });
 
 window.hospitalityApi = api;
