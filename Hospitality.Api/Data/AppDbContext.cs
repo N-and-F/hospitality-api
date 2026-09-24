@@ -30,6 +30,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             entity.Property(x => x.Amount).HasPrecision(18, 2);
             entity.Property(x => x.Profit).HasPrecision(18, 2);
             entity.Property(x => x.Cashback).HasPrecision(18, 2);
+            entity.Property(x => x.ConvenienceCharge).HasPrecision(18, 2);
+            entity.Property(x => x.GcashAmount).HasPrecision(18, 2);
             entity.Property(x => x.DeltaCashOnHand).HasPrecision(18, 2);
             entity.Property(x => x.DeltaGcash).HasPrecision(18, 2);
             entity.Property(x => x.DeltaTpc).HasPrecision(18, 2);

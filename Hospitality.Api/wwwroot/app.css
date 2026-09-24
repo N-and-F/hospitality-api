@@ -702,6 +702,13 @@ label {
   font-size: 0.9rem;
 }
 
+.field-hint {
+  margin-left: 0.25rem;
+  color: var(--muted);
+  font-weight: 500;
+  font-style: italic;
+}
+
 input, select, button {
   width: 100%;
   margin-top: 0.35rem;
@@ -1245,6 +1252,11 @@ button.ghost {
 }
 
 .check input { width: auto; margin: 0; }
+
+.check input:disabled {
+  accent-color: var(--accent);
+  cursor: not-allowed;
+}
 
 .error { color: var(--danger); font-weight: 700; }
 

@@ -300,6 +300,10 @@ namespace Hospitality.Api.Data.Migrations
                     b.Property<Guid>("ClientRequestId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("ConvenienceCharge")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.Property<decimal>("DeltaCashOnHand")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -309,6 +313,10 @@ namespace Hospitality.Api.Data.Migrations
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<decimal>("DeltaTpc")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("GcashAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 

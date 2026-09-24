@@ -7,6 +7,8 @@ public sealed class CreateTransactionRequest
     public decimal? Profit { get; set; }
     public bool ProfitInGcash { get; set; }
     public decimal? Cashback { get; set; }
+    public decimal? ConvenienceCharge { get; set; }
+    public decimal? GcashAmount { get; set; }
     public string? Note { get; set; }
     public DateTimeOffset? OccurredAt { get; set; }
     public Guid? ClientRequestId { get; set; }
@@ -19,6 +21,8 @@ public sealed class UpdateTransactionRequest
     public decimal? Profit { get; set; }
     public bool ProfitInGcash { get; set; }
     public decimal? Cashback { get; set; }
+    public decimal? ConvenienceCharge { get; set; }
+    public decimal? GcashAmount { get; set; }
     public string? Note { get; set; }
     public DateTimeOffset? OccurredAt { get; set; }
 }
@@ -42,6 +46,8 @@ public sealed record TransactionDto(
     decimal Profit,
     bool ProfitInGcash,
     decimal Cashback,
+    decimal ConvenienceCharge,
+    decimal GcashAmount,
     string? Note,
     InChargeDto InCharge,
     WalletDto Deltas,

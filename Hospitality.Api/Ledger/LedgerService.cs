@@ -40,9 +40,16 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             return (400, "VALIDATION_ERROR", "Unknown method.", null);
         }
 
-        if (request.Amount <= 0 || HasExtraDecimals(request.Amount))
+        if (request.Method != TransactionMethods.TpcBalanceInquiry
+            && (request.Amount <= 0 || HasExtraDecimals(request.Amount)))
         {
             return (400, "VALIDATION_ERROR", "Amount must be greater than 0 with at most 2 decimal places.", null);
+        }
+
+        if (request.Method == TransactionMethods.TpcBalanceInquiry
+            && (request.Amount < 0 || HasExtraDecimals(request.Amount)))
+        {
+            return (400, "VALIDATION_ERROR", "Amount cannot be negative and must have at most 2 decimal places.", null);
         }
 
         if (request.Profit is < 0 || (request.Profit is { } postedProfit && HasExtraDecimals(postedProfit)))
@@ -53,6 +60,17 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         if (request.Cashback is < 0 || (request.Cashback is { } postedCashback && HasExtraDecimals(postedCashback)))
         {
             return (400, "VALIDATION_ERROR", "Cashback cannot be negative and must have at most 2 decimal places.", null);
+        }
+
+        if (request.ConvenienceCharge is < 0
+            || (request.ConvenienceCharge is { } postedConvenience && HasExtraDecimals(postedConvenience)))
+        {
+            return (400, "VALIDATION_ERROR", "Convenience charge cannot be negative and must have at most 2 decimal places.", null);
+        }
+
+        if (request.GcashAmount is < 0 || (request.GcashAmount is { } postedGcashAmount && HasExtraDecimals(postedGcashAmount)))
+        {
+            return (400, "VALIDATION_ERROR", "GCash amount cannot be negative and must have at most 2 decimal places.", null);
         }
 
         if (request.Note is { Length: > 200 })
@@ -73,12 +91,27 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             return (200, null, null, await ToDtoAsync(existing, cancellationToken));
         }
 
+        var appliedAmount = AppliedAmount(request.Method, request.Amount);
         var appliedProfit = TransactionMethods.ForcesZeroProfit.Contains(request.Method)
             ? 0
-            : request.Profit ?? ProfitSuggestion.For(request.Method, request.Amount);
-        var profitInGcash = appliedProfit > 0 && request.ProfitInGcash;
+            : request.Profit ?? ProfitSuggestion.For(request.Method, appliedAmount);
+        var profitInGcash = AppliedProfitInGcash(request.Method, appliedProfit, request.ProfitInGcash);
         var appliedCashback = AppliedCashback(request.Method, request.Cashback);
-        var deltas = WalletMath.Deltas(request.Method, request.Amount, appliedProfit, profitInGcash, appliedCashback);
+        var appliedConvenience = AppliedConvenience(request.Method, request.ConvenienceCharge);
+        var appliedGcashAmount = AppliedGcashAmount(request.Method, request.GcashAmount);
+        if (request.Method == TransactionMethods.TpcBalanceInquiry && appliedConvenience <= 0)
+        {
+            return (400, "VALIDATION_ERROR", "Convenience charge must be greater than 0.", null);
+        }
+
+        var deltas = WalletMath.Deltas(
+            request.Method,
+            appliedAmount,
+            appliedProfit,
+            profitInGcash,
+            appliedCashback,
+            appliedConvenience,
+            appliedGcashAmount);
         var current = await CurrentWalletsAsync(walletId, cancellationToken);
         if (WalletMath.MakesCashOrGcashNegative(current, deltas))
         {
@@ -92,10 +125,12 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             Id = Guid.NewGuid(),
             OccurredAt = occurredAt,
             Method = request.Method,
-            Amount = decimal.Round(request.Amount, 2),
+            Amount = decimal.Round(appliedAmount, 2),
             Profit = decimal.Round(appliedProfit, 2),
             ProfitInGcash = profitInGcash,
             Cashback = decimal.Round(appliedCashback, 2),
+            ConvenienceCharge = decimal.Round(appliedConvenience, 2),
+            GcashAmount = decimal.Round(appliedGcashAmount, 2),
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             InChargeUserId = userId,
             WalletId = walletId,
@@ -152,9 +187,16 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             return (400, "VALIDATION_ERROR", "Unknown method.", null);
         }
 
-        if (request.Amount <= 0 || HasExtraDecimals(request.Amount))
+        if (request.Method != TransactionMethods.TpcBalanceInquiry
+            && (request.Amount <= 0 || HasExtraDecimals(request.Amount)))
         {
             return (400, "VALIDATION_ERROR", "Amount must be greater than 0 with at most 2 decimal places.", null);
+        }
+
+        if (request.Method == TransactionMethods.TpcBalanceInquiry
+            && (request.Amount < 0 || HasExtraDecimals(request.Amount)))
+        {
+            return (400, "VALIDATION_ERROR", "Amount cannot be negative and must have at most 2 decimal places.", null);
         }
 
         if (request.Profit is < 0 || (request.Profit is { } postedProfit && HasExtraDecimals(postedProfit)))
@@ -167,17 +209,43 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             return (400, "VALIDATION_ERROR", "Cashback cannot be negative and must have at most 2 decimal places.", null);
         }
 
+        if (request.ConvenienceCharge is < 0
+            || (request.ConvenienceCharge is { } postedConvenience && HasExtraDecimals(postedConvenience)))
+        {
+            return (400, "VALIDATION_ERROR", "Convenience charge cannot be negative and must have at most 2 decimal places.", null);
+        }
+
+        if (request.GcashAmount is < 0 || (request.GcashAmount is { } postedGcashAmount && HasExtraDecimals(postedGcashAmount)))
+        {
+            return (400, "VALIDATION_ERROR", "GCash amount cannot be negative and must have at most 2 decimal places.", null);
+        }
+
         if (request.Note is { Length: > 200 })
         {
             return (400, "VALIDATION_ERROR", "Note must be 200 characters or fewer.", null);
         }
 
+        var appliedAmount = AppliedAmount(request.Method, request.Amount);
         var appliedProfit = TransactionMethods.ForcesZeroProfit.Contains(request.Method)
             ? 0
-            : request.Profit ?? ProfitSuggestion.For(request.Method, request.Amount);
-        var profitInGcash = appliedProfit > 0 && request.ProfitInGcash;
+            : request.Profit ?? ProfitSuggestion.For(request.Method, appliedAmount);
+        var profitInGcash = AppliedProfitInGcash(request.Method, appliedProfit, request.ProfitInGcash);
         var appliedCashback = AppliedCashback(request.Method, request.Cashback);
-        var newDeltas = WalletMath.Deltas(request.Method, request.Amount, appliedProfit, profitInGcash, appliedCashback);
+        var appliedConvenience = AppliedConvenience(request.Method, request.ConvenienceCharge);
+        var appliedGcashAmount = AppliedGcashAmount(request.Method, request.GcashAmount);
+        if (request.Method == TransactionMethods.TpcBalanceInquiry && appliedConvenience <= 0)
+        {
+            return (400, "VALIDATION_ERROR", "Convenience charge must be greater than 0.", null);
+        }
+
+        var newDeltas = WalletMath.Deltas(
+            request.Method,
+            appliedAmount,
+            appliedProfit,
+            profitInGcash,
+            appliedCashback,
+            appliedConvenience,
+            appliedGcashAmount);
         var current = await CurrentWalletsAsync(walletId, cancellationToken);
         var without = current.Add(new WalletAmounts(-row.DeltaCashOnHand, -row.DeltaGcash, -row.DeltaTpc));
         if (WalletMath.MakesCashOrGcashNegative(without, newDeltas))
@@ -187,10 +255,12 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
 
         var after = without.Add(newDeltas);
         row.Method = request.Method;
-        row.Amount = decimal.Round(request.Amount, 2);
+        row.Amount = decimal.Round(appliedAmount, 2);
         row.Profit = decimal.Round(appliedProfit, 2);
         row.ProfitInGcash = profitInGcash;
         row.Cashback = decimal.Round(appliedCashback, 2);
+        row.ConvenienceCharge = decimal.Round(appliedConvenience, 2);
+        row.GcashAmount = decimal.Round(appliedGcashAmount, 2);
         row.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         row.DeltaCashOnHand = newDeltas.CashOnHand;
         row.DeltaGcash = newDeltas.Gcash;
@@ -218,11 +288,6 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
         if (row is null || row.WalletId != walletId)
         {
             return (404, "TRANSACTION_NOT_FOUND", "Transaction was not found.");
-        }
-
-        if (!isAdmin && row.InChargeUserId != userId)
-        {
-            return (403, "FORBIDDEN", "You do not have permission to perform this action.");
         }
 
         db.LedgerTransactions.Remove(row);
@@ -401,6 +466,8 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
             row.Profit,
             row.ProfitInGcash,
             row.Cashback,
+            row.ConvenienceCharge,
+            row.GcashAmount,
             row.Note,
             new InChargeDto(row.InChargeUserId, user?.UserName ?? ""),
             new WalletDto(row.DeltaCashOnHand, row.DeltaGcash, row.DeltaTpc),
@@ -414,8 +481,22 @@ public sealed class LedgerService(AppDbContext db, UserManager<IdentityUser> use
 
     private static bool HasExtraDecimals(decimal value) => decimal.Round(value, 2) != value;
 
+    private static bool AppliedProfitInGcash(string method, decimal profit, bool profitInGcash) =>
+        profit > 0 && (method == TransactionMethods.CashOutWithCharge || profitInGcash);
+
+    private static decimal AppliedAmount(string method, decimal amount) =>
+        method == TransactionMethods.TpcBalanceInquiry ? 0 : amount;
+
     private static decimal AppliedCashback(string method, decimal? cashback) =>
         method == TransactionMethods.LoadViaTpc ? cashback ?? 0 : 0;
+
+    private static decimal AppliedConvenience(string method, decimal? convenienceCharge) =>
+        method is TransactionMethods.LoadViaGcash or TransactionMethods.TpcBalanceInquiry
+            ? convenienceCharge ?? 0
+            : 0;
+
+    private static decimal AppliedGcashAmount(string method, decimal? gcashAmount) =>
+        method == TransactionMethods.TopUpTpc ? gcashAmount ?? 0 : 0;
 
     private static string SuggestionRule(string method) => method switch
     {

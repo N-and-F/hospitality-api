@@ -10,6 +10,8 @@ public sealed class LedgerTransaction
     public decimal Profit { get; set; }
     public bool ProfitInGcash { get; set; }
     public decimal Cashback { get; set; }
+    public decimal ConvenienceCharge { get; set; }
+    public decimal GcashAmount { get; set; }
     public string? Note { get; set; }
     public required string InChargeUserId { get; set; }
     public decimal DeltaCashOnHand { get; set; }

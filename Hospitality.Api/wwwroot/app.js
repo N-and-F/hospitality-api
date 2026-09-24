@@ -17,6 +17,7 @@ const openingError = document.getElementById("opening-error");
 
 let lastWallets = { cashOnHand: 0, gcash: 0, tpc: 0 };
 let lastTxns = [];
+let lastTxnMethod = "";
 let methodLabels = {};
 let historyRange = "day";
 let editingId = null;
@@ -188,7 +189,7 @@ function suggestedProfit(method, amount) {
   if (!Number.isFinite(amount) || amount <= 0) {
     return null;
   }
-  if (["top_up_gcash", "top_up_tpc", "add_cash_capital", "expenses", "bank_cash_deposit"].includes(method)) {
+  if (["top_up_gcash", "top_up_tpc", "add_cash_capital", "expenses", "bank_cash_deposit", "staff_remittance"].includes(method)) {
     return 0;
   }
   if (method === "load_via_gcash" || method === "load_via_tpc") {
@@ -205,15 +206,46 @@ function suggestedProfit(method, amount) {
 }
 
 function updateProfitHint() {
+  const method = methodSelect.value;
   const profit = document.getElementById("profit");
   const amount = Number(document.getElementById("amount").value);
-  const suggested = suggestedProfit(methodSelect.value, amount);
+  const suggested = suggestedProfit(method, amount);
   profit.placeholder = suggested === null ? "" : String(suggested);
-  const cashbackField = document.getElementById("cashback-field");
-  const isTpcLoad = methodSelect.value === "load_via_tpc";
-  cashbackField.hidden = !isTpcLoad;
+  const isInquiry = method === "tpc_balance_inquiry";
+  const isTpcLoad = method === "load_via_tpc";
+  const isGcashLoad = method === "load_via_gcash";
+  const isCharge = method === "cash_out_with_charge";
+  const isTopUpTpc = method === "top_up_tpc";
+  const amountOnly = ["top_up_gcash", "top_up_tpc", "add_cash_capital", "expenses", "bank_cash_deposit", "staff_remittance"].includes(method);
+  const profitGcash = document.getElementById("profit-gcash");
+  const paidGcash = document.getElementById("paid-gcash");
+  document.getElementById("amount-hint").hidden = !isCharge;
+  if (isCharge) {
+    profitGcash.checked = true;
+  } else if (lastTxnMethod === "cash_out_with_charge") {
+    profitGcash.checked = false;
+  }
+  profitGcash.disabled = isCharge;
+  lastTxnMethod = method;
+  document.getElementById("amount-field").hidden = isInquiry;
+  document.getElementById("amount").required = !isInquiry;
+  document.getElementById("profit-field").hidden = isInquiry || amountOnly;
+  document.getElementById("profit-gcash-field").hidden = isInquiry || amountOnly;
+  document.getElementById("cashback-field").hidden = !isTpcLoad;
+  document.getElementById("convenience-field").hidden = !(isGcashLoad || isInquiry);
+  document.getElementById("convenience").required = isInquiry;
+  document.getElementById("paid-gcash-field").hidden = !isTopUpTpc;
+  document.getElementById("gcash-amount-field").hidden = !isTopUpTpc || !paidGcash.checked;
+  document.getElementById("gcash-amount").required = isTopUpTpc && paidGcash.checked;
   if (!isTpcLoad) {
     document.getElementById("cashback").value = "";
+  }
+  if (!(isGcashLoad || isInquiry)) {
+    document.getElementById("convenience").value = "";
+  }
+  if (!isTopUpTpc) {
+    paidGcash.checked = false;
+    document.getElementById("gcash-amount").value = "";
   }
 }
 
@@ -430,12 +462,19 @@ async function refreshLedger() {
               minute: "2-digit"
             });
             const profit = `${peso(row.profit)}${row.profitInGcash ? " · GCash" : ""}`;
-            const amount = row.cashback > 0
-              ? `${peso(row.amount)} · CB ${peso(row.cashback)}`
+            let amount = row.method === "tpc_balance_inquiry"
+              ? peso(row.convenienceCharge)
               : peso(row.amount);
-            const deleteBtn = isAdmin()
-              ? deleteButton(`data-delete="${row.id}"`)
-              : "";
+            if (row.cashback > 0) {
+              amount = `${amount} · CB ${peso(row.cashback)}`;
+            }
+            if (row.method !== "tpc_balance_inquiry" && row.convenienceCharge > 0) {
+              amount = `${amount} · Conv ${peso(row.convenienceCharge)}`;
+            }
+            if (row.gcashAmount > 0) {
+              amount = `${amount} · GCash ${peso(row.gcashAmount)}`;
+            }
+            const deleteBtn = deleteButton(`data-delete="${row.id}"`);
             return `<tr>
               <td data-label="Date">${date}</td>
               <td data-label="Time">${time}</td>
@@ -492,8 +531,14 @@ function startEdit(row) {
   document.getElementById("profit").value = row.profit;
   document.getElementById("profit-gcash").checked = row.profitInGcash;
   document.getElementById("cashback").value = row.cashback || "";
+  document.getElementById("convenience").value = row.convenienceCharge || "";
+  document.getElementById("paid-gcash").checked = row.gcashAmount > 0;
+  document.getElementById("gcash-amount").value = row.gcashAmount || "";
   document.getElementById("note").value = row.note || "";
   updateProfitHint();
+  if (row.method !== "cash_out_with_charge") {
+    document.getElementById("profit-gcash").checked = row.profitInGcash;
+  }
   showPanel("txn");
 }
 
@@ -609,6 +654,17 @@ historyDate.addEventListener("change", () => {
 
 methodSelect.addEventListener("change", updateProfitHint);
 document.getElementById("amount").addEventListener("input", updateProfitHint);
+document.getElementById("paid-gcash").addEventListener("change", () => {
+  const paid = document.getElementById("paid-gcash");
+  const gcashAmount = document.getElementById("gcash-amount");
+  if (paid.checked && gcashAmount.value === "") {
+    gcashAmount.value = document.getElementById("amount").value;
+  }
+  if (!paid.checked) {
+    gcashAmount.value = "";
+  }
+  updateProfitHint();
+});
 
 document.querySelectorAll("[data-range]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -627,20 +683,33 @@ txnForm.addEventListener("submit", async (event) => {
   showError(txnError, "");
   const profitRaw = document.getElementById("profit").value;
   const txnDate = document.getElementById("txn-date").value || manilaDate();
+  const method = methodSelect.value;
+  const isInquiry = method === "tpc_balance_inquiry";
+  const amountOnly = ["top_up_gcash", "top_up_tpc", "add_cash_capital", "expenses", "bank_cash_deposit", "staff_remittance"].includes(method);
   const body = {
-    method: methodSelect.value,
-    amount: Number(document.getElementById("amount").value),
-    profitInGcash: document.getElementById("profit-gcash").checked,
+    method,
+    amount: isInquiry ? 0 : Number(document.getElementById("amount").value),
+    profitInGcash: method === "cash_out_with_charge" || document.getElementById("profit-gcash").checked,
     note: document.getElementById("note").value.trim(),
     occurredAt: occurredAtForSave(txnDate),
     clientRequestId: crypto.randomUUID()
   };
-  if (profitRaw !== "") {
+  if (isInquiry || amountOnly) {
+    body.profit = 0;
+  } else if (profitRaw !== "") {
     body.profit = Number(profitRaw);
   }
-  if (methodSelect.value === "load_via_tpc") {
+  if (method === "load_via_tpc") {
     const cashbackRaw = document.getElementById("cashback").value;
     body.cashback = cashbackRaw === "" ? 0 : Number(cashbackRaw);
+  }
+  if (method === "load_via_gcash" || isInquiry) {
+    const convenienceRaw = document.getElementById("convenience").value;
+    body.convenienceCharge = convenienceRaw === "" ? 0 : Number(convenienceRaw);
+  }
+  if (method === "top_up_tpc" && document.getElementById("paid-gcash").checked) {
+    const gcashRaw = document.getElementById("gcash-amount").value;
+    body.gcashAmount = gcashRaw === "" ? 0 : Number(gcashRaw);
   }
   try {
     const wasEdit = Boolean(editingId);

@@ -7,7 +7,9 @@ public static class WalletMath
         decimal amount,
         decimal profit,
         bool profitInGcash,
-        decimal cashback = 0)
+        decimal cashback = 0,
+        decimal convenienceCharge = 0,
+        decimal gcashAmount = 0)
     {
         if (TransactionMethods.ForcesZeroProfit.Contains(method))
         {
@@ -22,13 +24,15 @@ public static class WalletMath
             TransactionMethods.CashIn => new(amount + feeCash, -amount + feeGcash, 0),
             TransactionMethods.CashOut => new(-amount + feeCash, amount + feeGcash, 0),
             TransactionMethods.CashOutWithCharge => new(-amount + feeCash, amount + feeGcash, 0),
-            TransactionMethods.LoadViaGcash => new(amount + feeCash, -amount + feeGcash, 0),
+            TransactionMethods.LoadViaGcash => new(amount + feeCash, -amount + feeGcash - convenienceCharge, 0),
             TransactionMethods.LoadViaTpc => new(amount + feeCash, feeGcash, -amount + cashback),
+            TransactionMethods.TpcBalanceInquiry => new(0, 0, -convenienceCharge),
             TransactionMethods.TopUpGcash => new(0, amount, 0),
-            TransactionMethods.TopUpTpc => new(0, 0, amount),
+            TransactionMethods.TopUpTpc => new(0, -gcashAmount, amount),
             TransactionMethods.AddCashCapital => new(amount, 0, 0),
             TransactionMethods.Expenses => new(-amount, 0, 0),
             TransactionMethods.BankCashDeposit => new(-amount, 0, 0),
+            TransactionMethods.StaffRemittance => new(-amount, 0, 0),
             _ => throw new ArgumentOutOfRangeException(nameof(method), method, "Unknown method.")
         };
     }
